@@ -48,14 +48,7 @@ dirty_since=0
 
 sync_once() {
   echo "[auto-sync] syncing changes..."
-  if git -C "\$ROOT_DIR" add -A && \
-    if git -C "\$ROOT_DIR" diff --cached --quiet; then
-      echo "[auto-sync] no changes to sync."
-      return 0
-    fi && \
-    git -C "\$ROOT_DIR" commit -m "\${COMMIT_PREFIX}: \$(date '+%Y-%m-%d %H:%M:%S')" && \
-    git -C "\$ROOT_DIR" pull --rebase --autostash "\$REMOTE_NAME" "\$(git -C "\$ROOT_DIR" branch --show-current)" && \
-    git -C "\$ROOT_DIR" push -u "\$REMOTE_NAME" "\$(git -C "\$ROOT_DIR" branch --show-current)"; then
+  if bash "\$ROOT_DIR/scripts/sync-github.sh" -r "\$REMOTE_NAME" -m "\${COMMIT_PREFIX}: \$(date '+%Y-%m-%d %H:%M:%S')"; then
     echo "[auto-sync] sync completed."
     return 0
   fi
