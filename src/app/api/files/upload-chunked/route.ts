@@ -9,54 +9,6 @@ export const maxDuration = 60;
 
 const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB 每块，适配 Vercel 请求体限制
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
-let chunkSchemaReady: Promise<void> | null = null;
-
-async function ensureChunkUploadSchema(): Promise<void> {
-  if (!chunkSchemaReady) {
-    chunkSchemaReady = (async () => {
-      const pool = getDirectDbPool();
-      await pool.query(`
-        create table if not exists upload_chunk_sessions (
-          id text primary key,
-          file_name text not null,
-          file_size bigint not null,
-          mime_type text not null,
-          total_chunks integer not null,
-          title text not null,
-          description text not null default '',
-          category_id text not null,
-          semester text not null default '',
-          course text not null default '',
-          tags jsonb not null default '[]'::jsonb,
-          user_id text not null,
-          is_admin_or_volunteer boolean not null default false,
-          created_at timestamptz not null default now()
-        );
-      `);
-      await pool.query(`
-        create table if not exists upload_chunk_parts (
-          session_id text not null references upload_chunk_sessions(id) on delete cascade,
-          chunk_index integer not null,
-          chunk_data bytea not null,
-          created_at timestamptz not null default now(),
-          primary key (session_id, chunk_index)
-        );
-      `);
-      await pool.query(`create index if not exists upload_chunk_sessions_created_at_idx on upload_chunk_sessions(created_at);`);
-      await pool.query(`create index if not exists upload_chunk_parts_session_idx on upload_chunk_parts(session_id);`);
-    })();
-  }
-  return chunkSchemaReady;
-}
-
-async function cleanupExpiredSessions(): Promise<void> {
-  try {
-    const pool = getDirectDbPool();
-    await pool.query(`delete from upload_chunk_sessions where created_at < now() - interval '1 hour'`);
-  } catch (error) {
-    console.warn("[ChunkedUpload] cleanup failed:", error);
-  }
-}
 
 async function authorize(request: NextRequest) {
   const token = request.headers.get("authorization")?.replace("Bearer ", "");
@@ -87,9 +39,6 @@ async function authorize(request: NextRequest) {
 }
 
 async function initChunkedUpload(request: NextRequest) {
-  await ensureChunkUploadSchema();
-  await cleanupExpiredSessions();
-
   const auth = await authorize(request);
   if ("error" in auth) return auth.error;
 
@@ -140,8 +89,6 @@ async function initChunkedUpload(request: NextRequest) {
 }
 
 async function uploadChunk(request: NextRequest) {
-  await ensureChunkUploadSchema();
-
   const auth = await authorize(request);
   if ("error" in auth) return auth.error;
 
@@ -188,8 +135,6 @@ async function uploadChunk(request: NextRequest) {
 }
 
 async function completeChunkedUpload(request: NextRequest) {
-  await ensureChunkUploadSchema();
-
   const auth = await authorize(request);
   if ("error" in auth) return auth.error;
 
