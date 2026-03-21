@@ -76,9 +76,8 @@ sync_once() {
 
   git -C "\$ROOT_DIR" commit -m "\${COMMIT_PREFIX}: \$(date '+%Y-%m-%d %H:%M:%S')"
   git -C "\$ROOT_DIR" push -u "\$REMOTE_NAME" "\$branch"
-
-    echo "[auto-sync] sync completed."
-    return 0
+  echo "[auto-sync] sync completed."
+  return 0
 }
 
 while true; do
