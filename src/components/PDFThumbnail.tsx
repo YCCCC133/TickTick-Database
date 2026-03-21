@@ -2,13 +2,7 @@
 
 import { useEffect, useRef, useState, memo } from "react";
 import { FileText } from "lucide-react";
-
-// 声明全局 pdfjsLib 类型
-declare global {
-  interface Window {
-    pdfjsLib: any;
-  }
-}
+import { ensurePdfJsLoaded } from "@/lib/pdfjs-loader";
 
 // 全局缓存：记录已加载的文件ID和生成的预览URL
 const loadedFilesCache = new Map<string, string>();
@@ -80,41 +74,18 @@ const PDFThumbnail = memo(function PDFThumbnail({
 
   // 加载 PDF.js 脚本
   const loadPdfJsScript = () => {
-    return new Promise<void>((resolve, reject) => {
-      if (pdfJsLoaded && window.pdfjsLib) {
-        resolve();
-        return;
-      }
+    if (pdfJsLoaded && window.pdfjsLib) {
+      return Promise.resolve();
+    }
 
-      if (pdfJsLoading) {
-        // 等待加载完成
-        const checkLoaded = setInterval(() => {
-          if (pdfJsLoaded && window.pdfjsLib) {
-            clearInterval(checkLoaded);
-            resolve();
-          }
-        }, 100);
-        return;
-      }
-
-      pdfJsLoading = true;
-      const script = document.createElement("script");
-      script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-      script.onload = () => {
-        if (window.pdfjsLib) {
-          window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-            "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-        }
+    pdfJsLoading = true;
+    return ensurePdfJsLoaded()
+      .then(() => {
         pdfJsLoaded = true;
+      })
+      .finally(() => {
         pdfJsLoading = false;
-        resolve();
-      };
-      script.onerror = () => {
-        pdfJsLoading = false;
-        reject(new Error("PDF.js 加载失败"));
-      };
-      document.head.appendChild(script);
-    });
+      });
   };
 
   // 当外部传入的previewUrl变化时更新

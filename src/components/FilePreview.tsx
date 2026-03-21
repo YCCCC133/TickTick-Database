@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, memo, useCallback } from "react";
 import { FileText } from "lucide-react";
+import { ensurePdfJsLoaded } from "@/lib/pdfjs-loader";
 
 interface FilePreviewProps {
   fileId: string;
@@ -134,7 +135,7 @@ const FilePreview = memo(function FilePreview({
     try {
       // 动态加载PDF.js
       if (!window.pdfjsLib) {
-        await loadPdfJs();
+        await ensurePdfJsLoaded();
       }
       
       const pdfjs = window.pdfjsLib;
@@ -245,29 +246,20 @@ const FilePreview = memo(function FilePreview({
     }
   };
 
-  // 加载PDF.js脚本
-  const loadPdfJs = () => {
-    return new Promise((resolve, reject) => {
-      if (window.pdfjsLib) {
-        resolve(true);
-        return;
-      }
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-      script.onload = () => resolve(true);
-      script.onerror = reject;
-      document.head.appendChild(script);
-    });
-  };
-
   // 当PDF URL变化时渲染
   useEffect(() => {
     if (pdfUrl && !rendered && !displayPreviewUrl) {
-      // 等待容器尺寸确定后再渲染
-      const timer = setTimeout(() => {
+      let frame = 0;
+      const scheduleRender = () => {
         renderPdfFirstPage(pdfUrl);
-      }, 100);
-      return () => clearTimeout(timer);
+      };
+
+      if (typeof window !== "undefined" && "requestAnimationFrame" in window) {
+        frame = window.requestAnimationFrame(scheduleRender);
+        return () => window.cancelAnimationFrame(frame);
+      }
+
+      scheduleRender();
     }
   }, [pdfUrl, rendered, renderPdfFirstPage, displayPreviewUrl]);
 
@@ -354,12 +346,5 @@ const FilePreview = memo(function FilePreview({
   // 3. 其他文件类型 - 显示文件图标
   return DefaultPlaceholder;
 });
-
-// 添加类型声明
-declare global {
-  interface Window {
-    pdfjsLib: any;
-  }
-}
 
 export default FilePreview;

@@ -3,17 +3,11 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { FileText, Loader2, ZoomIn, ZoomOut, Grid3X3, LayoutList } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ensurePdfJsLoaded } from "@/lib/pdfjs-loader";
 
 interface PDFTileViewerProps {
   url: string;
   className?: string;
-}
-
-// 声明全局 pdfjsLib 类型
-declare global {
-  interface Window {
-    pdfjsLib: any;
-  }
 }
 
 // 页面尺寸信息
@@ -87,28 +81,10 @@ export function PDFTileViewer({ url, className = "" }: PDFTileViewerProps) {
 
   // 动态加载 PDF.js 脚本
   useEffect(() => {
-    const loadPdfJsScript = () => {
-      return new Promise<boolean>((resolve, reject) => {
-        if (window.pdfjsLib) {
-          resolve(true);
-          return;
-        }
-        const script = document.createElement("script");
-        script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-        script.onload = () => resolve(true);
-        script.onerror = () => reject(new Error("Failed to load PDF.js"));
-        document.head.appendChild(script);
-      });
-    };
-
     const initPdfLib = async () => {
       try {
-        await loadPdfJsScript();
-        if (window.pdfjsLib) {
-          window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-            "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-          setPdfLibReady(true);
-        }
+        await ensurePdfJsLoaded();
+        setPdfLibReady(true);
       } catch (err) {
         console.error("Failed to load PDF.js:", err);
         setError("PDF.js 加载失败");

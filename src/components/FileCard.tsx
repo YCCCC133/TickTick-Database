@@ -1,10 +1,19 @@
 "use client";
 
 import { useState, memo } from "react";
+import dynamic from "next/dynamic";
 import { Download, Star, Award, FileText, MessageCircle, Edit2 } from "lucide-react";
 import { File } from "@/types";
 import { formatFileSize } from "@/lib/utils";
-import PDFThumbnail from "./PDFThumbnail";
+
+const PDFThumbnail = dynamic(() => import("./PDFThumbnail"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full flex items-center justify-center">
+      <FileText className="w-6 h-6 text-[#94A3B8]" />
+    </div>
+  ),
+});
 
 // 全局图片预览缓存
 const imagePreviewCache = new Map<string, string>();

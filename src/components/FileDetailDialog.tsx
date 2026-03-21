@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import dynamic from "next/dynamic";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Download, Star, FileText, Calendar, User, MessageCircle, Send, X, Coins, Award, Trash2, Loader2 } from "lucide-react";
@@ -9,7 +10,18 @@ import { formatFileSize } from "@/lib/utils";
 import { toast } from "sonner";
 import { POINTS_CONFIG } from "@/types/points";
 import { useAuth } from "@/contexts/AuthContext";
-import { PDFViewer } from "@/components/PDFViewer";
+
+const PDFViewer = dynamic(
+  () => import("@/components/PDFViewer").then((mod) => mod.PDFViewer),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center h-[420px]">
+        <Loader2 className="w-8 h-8 text-[#005BA3] animate-spin" />
+      </div>
+    ),
+  }
+);
 
 interface FileDetailDialogProps {
   open: boolean;
@@ -56,10 +68,15 @@ export default function FileDetailDialog({
 
   useEffect(() => {
     if (open && file) {
-      fetchRatings();
-      fetchComments();
       // 加载文件 URL
       loadFileUrl();
+
+      const metaTimer = window.setTimeout(() => {
+        void fetchRatings();
+        void fetchComments();
+      }, 300);
+
+      return () => window.clearTimeout(metaTimer);
     }
   }, [open, file]);
 

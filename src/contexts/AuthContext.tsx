@@ -26,6 +26,7 @@ interface AuthContextType {
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => void;
   refreshPoints: () => Promise<void>;
+  updateProfile: (updates: Partial<Profile>) => void;
   isAdmin: boolean;
   isVolunteer: boolean;
 }
@@ -56,6 +57,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const pointsRefreshTimer = useRef<NodeJS.Timeout | null>(null);
   // Token 刷新定时器
   const tokenRefreshTimer = useRef<NodeJS.Timeout | null>(null);
+  // 延后执行的非关键任务
+  const deferredTimersRef = useRef<number[]>([]);
+
+  const clearDeferredTimers = useCallback(() => {
+    deferredTimersRef.current.forEach((timer) => clearTimeout(timer));
+    deferredTimersRef.current = [];
+  }, []);
+
+  const scheduleDeferredTask = useCallback((task: () => void, delay = 250) => {
+    const timer = window.setTimeout(() => {
+      deferredTimersRef.current = deferredTimersRef.current.filter((item) => item !== timer);
+      task();
+    }, delay);
+
+    deferredTimersRef.current.push(timer);
+    return timer;
+  }, []);
 
   // 初始化：从本地存储恢复会话
   useEffect(() => {
@@ -97,8 +115,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // 设置 token 自动刷新
           scheduleTokenRefresh(session.expires_at, session.refresh_token);
           
-          // 异步验证 token 并更新用户信息
-          verifyAndUpdateSession(session.access_token);
+          // 非关键校验放到空闲期，避免阻塞首屏可交互
+          scheduleDeferredTask(() => {
+            void verifyAndUpdateSession(session.access_token);
+          }, 400);
+
+          // 积分同样延后刷新，先用本地缓存顶上
+          scheduleDeferredTask(() => {
+            void fetchPointsOnly(session.access_token);
+          }, 900);
         } else if (session.refresh_token) {
           // Token 已过期，尝试用 refresh_token 刷新
           await refreshSession(session.refresh_token);
@@ -117,6 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     initAuth();
 
     return () => {
+      clearDeferredTimers();
       if (pointsRefreshTimer.current) {
         clearTimeout(pointsRefreshTimer.current);
       }
@@ -128,6 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 清除认证相关的本地存储
   const clearAuthStorage = () => {
+    clearDeferredTimers();
     localStorage.removeItem(STORAGE_KEYS.SESSION);
     localStorage.removeItem(STORAGE_KEYS.PROFILE);
     localStorage.removeItem(STORAGE_KEYS.POINTS);
@@ -309,12 +336,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(data.profile));
     }
     
-    // 获取积分
+    // 登录后先不阻塞在积分请求上，交给空闲期再补
     if (data.points) {
       setPoints(data.points);
       localStorage.setItem(STORAGE_KEYS.POINTS, JSON.stringify(data.points));
     } else {
-      fetchPointsOnly(data.session.access_token);
+      scheduleDeferredTask(() => {
+        void fetchPointsOnly(data.session.access_token);
+      }, 300);
     }
     
     // 设置 token 自动刷新
@@ -345,6 +374,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
+    clearDeferredTimers();
     clearAuthStorage();
     setToken(null);
     setUser(null);
@@ -356,6 +386,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearTimeout(tokenRefreshTimer.current);
     }
   };
+
+  const updateProfile = useCallback((updates: Partial<Profile>) => {
+    setProfile((prev) => {
+      const nextProfile = prev ? { ...prev, ...updates } : null;
+      if (nextProfile) {
+        localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(nextProfile));
+      }
+      return nextProfile;
+    });
+  }, []);
 
   const isAdmin = profile?.role === "admin";
   const isVolunteer = profile?.role === "volunteer" || isAdmin;
@@ -372,6 +412,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         register,
         logout,
         refreshPoints,
+        updateProfile,
         isAdmin,
         isVolunteer,
       }}

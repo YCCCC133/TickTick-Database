@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import dynamic from "next/dynamic";
 import { useAuth } from "@/contexts/AuthContext";
 import { Search, Upload, User, LogIn, UserPlus, Settings, LogOut, Folder, Clock, TrendingUp, Coins, ArrowUpDown, ChevronsDown, Edit2, Award, Camera } from "lucide-react";
 import { File, Category } from "@/types";
@@ -11,10 +12,6 @@ import { useDebounce } from "@/hooks/useDebounce";
 import { FileCardSkeleton } from "@/components/Loading";
 import { Empty } from "@/components/Empty";
 import FileCard from "@/components/FileCard";
-import FileUploadDialog from "@/components/FileUploadDialog";
-import AuthDialog from "@/components/AuthDialog";
-import FileDetailDialog from "@/components/FileDetailDialog";
-import Footer from "@/components/Footer";
 import { uploadAvatarDirectToCos } from "@/lib/browser-upload";
 import {
   Dialog,
@@ -26,6 +23,26 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+
+const FileUploadDialog = dynamic(() => import("@/components/FileUploadDialog"), {
+  ssr: false,
+  loading: () => null,
+});
+
+const AuthDialog = dynamic(() => import("@/components/AuthDialog"), {
+  ssr: false,
+  loading: () => null,
+});
+
+const FileDetailDialog = dynamic(() => import("@/components/FileDetailDialog"), {
+  ssr: false,
+  loading: () => null,
+});
+
+const Footer = dynamic(() => import("@/components/Footer"), {
+  ssr: false,
+  loading: () => null,
+});
 
 // 排序选项
 const SORT_OPTIONS = [
@@ -40,7 +57,7 @@ const PAGE_SIZE = 12;
 const FEATURED_CATEGORY = "__featured__";
 
 export default function Home() {
-  const { user, profile, points, logout, isVolunteer, refreshPoints } = useAuth();
+  const { user, profile, points, logout, isVolunteer, refreshPoints, updateProfile } = useAuth();
   
   // 数据状态
   const [files, setFiles] = useState<File[]>([]);
@@ -162,6 +179,16 @@ export default function Home() {
   useEffect(() => {
     fetchCategories();
   }, [fetchCategories]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void import("@/components/AuthDialog");
+      void import("@/components/FileUploadDialog");
+      void import("@/components/FileDetailDialog");
+    }, 1500);
+
+    return () => window.clearTimeout(timer);
+  }, []);
 
   // 搜索/筛选变化时重新加载
   useEffect(() => {
@@ -365,9 +392,10 @@ export default function Home() {
 
       toast.success("保存成功");
       setProfileEditOpen(false);
-      
-      // 刷新用户信息
-      window.location.reload();
+      updateProfile({
+        name: profileForm.name.trim(),
+        avatar: profileForm.avatar || undefined,
+      });
     } catch (error) {
       console.error("Profile save error:", error);
       toast.error("保存失败");

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { ChevronLeft, ChevronRight, FileText, Loader2, ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ensurePdfJsLoaded } from "@/lib/pdfjs-loader";
 
 interface PDFViewerProps {
   url: string;
@@ -24,12 +25,6 @@ type PdfDocumentLike = {
   getPage(pageNumber: number): Promise<PdfPage>;
 };
 
-declare global {
-  interface Window {
-    pdfjsLib: any;
-  }
-}
-
 export function PDFViewer({ url, className = "" }: PDFViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [pdfDoc, setPdfDoc] = useState<PdfDocumentLike | null>(null);
@@ -44,28 +39,10 @@ export function PDFViewer({ url, className = "" }: PDFViewerProps) {
 
   // 动态加载 PDF.js 脚本
   useEffect(() => {
-    const loadPdfJsScript = () => {
-      return new Promise<boolean>((resolve, reject) => {
-        if (window.pdfjsLib) {
-          resolve(true);
-          return;
-        }
-        const script = document.createElement("script");
-        script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-        script.onload = () => resolve(true);
-        script.onerror = () => reject(new Error("Failed to load PDF.js"));
-        document.head.appendChild(script);
-      });
-    };
-
     const initPdfLib = async () => {
       try {
-        await loadPdfJsScript();
-        if (window.pdfjsLib) {
-          window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-            "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-          setPdfLibReady(true);
-        }
+        await ensurePdfJsLoaded();
+        setPdfLibReady(true);
       } catch (err) {
         console.error("Failed to load PDF.js:", err);
         setError("PDF.js 加载失败");
