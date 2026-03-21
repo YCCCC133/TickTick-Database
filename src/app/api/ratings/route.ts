@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     const userIds = [...new Set((data || []).map((r: RatingRow) => r.user_id).filter(Boolean) || [])];
     
     // 批量查询用户信息 - 使用 user_id 关联
-    const profilesMap: Record<string, { name: string; avatar?: string }> = {};
+    const profilesMap: Record<string, { name: string | null; avatar?: string | null }> = {};
     if (userIds.length > 0) {
       const { data: profiles } = await client
         .from("profiles")
