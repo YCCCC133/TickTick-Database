@@ -167,7 +167,7 @@ export async function POST(request: NextRequest) {
       .eq("file_id", fileId);
 
     if (ratings && ratings.length > 0) {
-      const avgRating = ratings.reduce((sum, r) => sum + r.score, 0) / ratings.length;
+      const avgRating = ratings.reduce((sum: number, r: { score: number }) => sum + r.score, 0) / ratings.length;
       await client
         .from("files")
         .update({
