@@ -3,6 +3,10 @@ import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { cache, CACHE_KEYS, CACHE_TTL } from "@/lib/cache";
 import { directQuery } from "@/lib/direct-db";
 
+const PUBLIC_CACHE_HEADERS = {
+  "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
+};
+
 /**
  * 获取所有分类（带缓存）
  */
@@ -15,7 +19,7 @@ export async function GET(request?: NextRequest) {
       const cachedCategories = cache.get<Array<Record<string, unknown>>>(CACHE_KEYS.CATEGORIES);
       
       if (cachedCategories) {
-        return NextResponse.json({ categories: cachedCategories, cached: true });
+        return NextResponse.json({ categories: cachedCategories, cached: true }, { headers: PUBLIC_CACHE_HEADERS });
       }
     }
 
@@ -51,7 +55,7 @@ export async function GET(request?: NextRequest) {
       cache.set(CACHE_KEYS.CATEGORIES, data, CACHE_TTL.LONG);
     }
 
-    return NextResponse.json({ categories: data, cached: false });
+    return NextResponse.json({ categories: data, cached: false }, { headers: PUBLIC_CACHE_HEADERS });
   } catch (error) {
     console.error("Get categories error:", error);
     return NextResponse.json(

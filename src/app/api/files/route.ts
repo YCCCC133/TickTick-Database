@@ -3,6 +3,10 @@ import { cache, CACHE_TTL } from "@/lib/cache";
 import { directQuery } from "@/lib/direct-db";
 import { getPublicOrigin } from "@/lib/public-origin";
 
+const PUBLIC_CACHE_HEADERS = {
+  "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120",
+};
+
 type FilesHomeResponse = {
   files: Array<Record<string, unknown>>;
   pagination: {
@@ -134,7 +138,7 @@ export async function GET(request: NextRequest) {
     if (!noCache && !category && !search && !semester && !isFeatured && resolvedPage === 1 && sortBy === "comprehensive") {
       const cached = cache.get<FilesHomeResponse>(cacheKey);
       if (cached) {
-        return NextResponse.json({ ...cached, cached: true });
+        return NextResponse.json({ ...cached, cached: true }, { headers: PUBLIC_CACHE_HEADERS });
       }
     }
 
@@ -257,7 +261,7 @@ export async function GET(request: NextRequest) {
       cache.set("files:home", result, CACHE_TTL.SHORT);
     }
 
-    return NextResponse.json(result);
+    return NextResponse.json(result, { headers: PUBLIC_CACHE_HEADERS });
   } catch (error) {
     console.error("Get files error:", error);
     return NextResponse.json(

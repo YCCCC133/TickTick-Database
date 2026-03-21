@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { getFileUrl } from "@/lib/storage";
 
+const PRIVATE_CACHE_HEADERS = {
+  "Cache-Control": "private, max-age=300, stale-while-revalidate=600",
+};
+
 /**
  * 获取文件预览URL
  * 用于前端渲染PDF或其他文件预览
@@ -103,7 +107,7 @@ export async function GET(
       response.hasPreview = true;
     }
 
-    return NextResponse.json(response);
+    return NextResponse.json(response, { headers: PRIVATE_CACHE_HEADERS });
   } catch (error) {
     console.error("Get file preview URL error:", error);
     return NextResponse.json(

@@ -17,6 +17,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
+      <head>
+        <link rel="preconnect" href="https://cdnjs.cloudflare.com" />
+        <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com" />
+        <link rel="preconnect" href="https://view.officeapps.live.com" />
+        <link rel="dns-prefetch" href="https://view.officeapps.live.com" />
+      </head>
       <body className="antialiased">
         <AuthProvider>
           <Suspense fallback={null}>

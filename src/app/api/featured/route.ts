@@ -3,13 +3,17 @@ import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { cache, CACHE_KEYS, CACHE_TTL } from "@/lib/cache";
 import { directQuery } from "@/lib/direct-db";
 
+const PUBLIC_CACHE_HEADERS = {
+  "Cache-Control": "public, s-maxage=300, stale-while-revalidate=1800",
+};
+
 // 获取精选文件列表（从files表中获取is_featured=true的文件）
 export async function GET(request: NextRequest) {
   try {
     // 尝试从缓存获取
     const cachedFeatured = cache.get<any[]>(CACHE_KEYS.FEATURED_FILES);
     if (cachedFeatured) {
-      return NextResponse.json({ featured: cachedFeatured, cached: true });
+      return NextResponse.json({ featured: cachedFeatured, cached: true }, { headers: PUBLIC_CACHE_HEADERS });
     }
 
     const featuredFiles = await directQuery<any>(
@@ -40,7 +44,7 @@ export async function GET(request: NextRequest) {
     // 缓存精选文件列表（5分钟）
     cache.set(CACHE_KEYS.FEATURED_FILES, featuredFiles, CACHE_TTL.MEDIUM);
 
-    return NextResponse.json({ featured: featuredFiles, cached: false });
+    return NextResponse.json({ featured: featuredFiles, cached: false }, { headers: PUBLIC_CACHE_HEADERS });
   } catch (error) {
     console.error("Get featured files error:", error);
     return NextResponse.json(
