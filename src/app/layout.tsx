@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
@@ -18,7 +19,9 @@ export default function RootLayout({
     <html lang="zh-CN">
       <body className="antialiased">
         <AuthProvider>
-          <AnalyticsTracker />
+          <Suspense fallback={null}>
+            <AnalyticsTracker />
+          </Suspense>
           {children}
           <Toaster 
             position="top-center"
