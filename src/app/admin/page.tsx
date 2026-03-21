@@ -766,24 +766,34 @@ export default function AdminPage() {
       csvRows.push("=== 详细访问记录 ===");
       csvRows.push("序号,访问时间,IP地址,页面路径,页面类型,来源,浏览器,操作系统,设备类型,会话ID");
       const pageTypeLabelMap = typeLabels as Record<string, string>;
-      
+
+      const toText = (value: unknown, fallback = "未知") => {
+        if (typeof value === "string" && value.trim()) return value;
+        if (typeof value === "number" && Number.isFinite(value)) return String(value);
+        if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
+        return fallback;
+      };
+
       allPageViews.forEach((view, index) => {
-        const pageType = typeof view.pageType === "string" ? view.pageType : "";
+        const pageType = toText(view.pageType, "");
         const pageTypeLabel = pageTypeLabelMap[pageType] || pageType || "未知";
-        const referrer = view.referrer || "直接访问";
-        const time = new Date(view.createdAt).toLocaleString("zh-CN");
-        
+        const referrer = toText(view.referrer, "直接访问");
+        const createdAt = typeof view.createdAt === "string" || typeof view.createdAt === "number" || view.createdAt instanceof Date
+          ? view.createdAt
+          : Date.now();
+        const time = new Date(createdAt).toLocaleString("zh-CN");
+
         csvRows.push([
           index + 1,
           time,
-          view.ipAddress || "未知",
-          `"${view.pagePath || ""}"`,
+          toText(view.ipAddress),
+          `"${toText(view.pagePath, "").replace(/"/g, '""')}"`,
           pageTypeLabel,
-          `"${referrer}"`,
-          view.browser || "未知",
-          view.os || "未知",
-          view.device || "未知",
-          view.sessionId || "",
+          `"${referrer.replace(/"/g, '""')}"`,
+          toText(view.browser),
+          toText(view.os),
+          toText(view.device),
+          toText(view.sessionId, ""),
         ].join(","));
       });
 
