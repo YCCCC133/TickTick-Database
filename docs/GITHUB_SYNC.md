@@ -79,7 +79,13 @@ bash scripts/auto-sync-github.sh
 
 建议先确保 GitHub 凭据已配置好，这样脚本才能无交互完成 `pull --rebase`、commit 和 push。
 
-如果你想让它在 macOS 登录后自动运行，可以再把这个脚本接到系统启动项里；当前仓库保持最小方案，不强制写入系统服务配置。
+如果你想让它在 macOS 登录后自动运行，可以安装 LaunchAgent：
+
+```bash
+bash scripts/install-auto-sync-launchagent.sh
+```
+
+这会把自动同步脚本注册为后台常驻服务，登录后自动启动。
 
 ## 6. 被忽略的内容
 
