@@ -119,6 +119,14 @@ const FilePreview = memo(function FilePreview({
     fetchPdfInfo();
   }, [fileId, isPDF]);
 
+  const handlePreviewImageError = () => {
+    if (!previewFallback) {
+      setPreviewFallback(true);
+      setSavedPreviewUrl(null);
+      return;
+    }
+  };
+
   // 渲染PDF首页
   const renderPdfFirstPage = useCallback(async (url: string) => {
     if (!containerRef.current || !canvasContainerRef.current || rendered) return;
@@ -290,6 +298,7 @@ const FilePreview = memo(function FilePreview({
                 onRatioChange(img.naturalWidth / img.naturalHeight);
               }
             }}
+            onError={handlePreviewImageError}
           />
         </div>
       );
@@ -313,6 +322,7 @@ const FilePreview = memo(function FilePreview({
                 onRatioChange(img.naturalWidth / img.naturalHeight);
               }
             }}
+            onError={handlePreviewImageError}
           />
         </div>
       );
