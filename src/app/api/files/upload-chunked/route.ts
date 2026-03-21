@@ -1,71 +1,100 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
-import { getFileUrl } from "@/lib/storage";
+import { getFileUrl, uploadFile } from "@/lib/storage";
+import { getDirectDbPool } from "@/lib/direct-db";
 
-// 分块上传配置
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB 每块
+const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB 每块，适配 Vercel 请求体限制
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+const SESSION_TTL_MS = 60 * 60 * 1000;
 
-// 存储分块信息的临时表（使用内存缓存）
-const uploadSessions = new Map<string, {
-  fileId: string;
-  fileName: string;
-  fileSize: number;
-  mimeType: string;
-  totalChunks: number;
-  uploadedChunks: Set<number>;
-  chunks: Buffer[];
-  title: string;
-  description: string;
-  categoryId: string;
-  semester: string;
-  course: string;
-  tags: string[];
-  userId: string;
-  createdAt: number;
-  isAdminOrVolunteer: boolean; // 是否是管理员/志愿者（决定是否需要审核）
-}>();
+let chunkSchemaReady: Promise<void> | null = null;
 
-// 清理过期会话（超过1小时）
-setInterval(() => {
-  const now = Date.now();
-  for (const [sessionId, session] of uploadSessions.entries()) {
-    if (now - session.createdAt > 60 * 60 * 1000) {
-      uploadSessions.delete(sessionId);
-    }
+async function ensureChunkUploadSchema(): Promise<void> {
+  if (!chunkSchemaReady) {
+    chunkSchemaReady = (async () => {
+      const pool = getDirectDbPool();
+      await pool.query(`
+        create table if not exists upload_chunk_sessions (
+          id text primary key,
+          file_name text not null,
+          file_size bigint not null,
+          mime_type text not null,
+          total_chunks integer not null,
+          title text not null,
+          description text not null default '',
+          category_id text not null,
+          semester text not null default '',
+          course text not null default '',
+          tags jsonb not null default '[]'::jsonb,
+          user_id text not null,
+          is_admin_or_volunteer boolean not null default false,
+          created_at timestamptz not null default now()
+        );
+      `);
+      await pool.query(`
+        create table if not exists upload_chunk_parts (
+          session_id text not null references upload_chunk_sessions(id) on delete cascade,
+          chunk_index integer not null,
+          chunk_data bytea not null,
+          created_at timestamptz not null default now(),
+          primary key (session_id, chunk_index)
+        );
+      `);
+      await pool.query(`create index if not exists upload_chunk_sessions_created_at_idx on upload_chunk_sessions(created_at);`);
+      await pool.query(`create index if not exists upload_chunk_parts_session_idx on upload_chunk_parts(session_id);`);
+    })();
   }
-}, 60 * 1000);
+  return chunkSchemaReady;
+}
 
-/**
- * 初始化分块上传
- */
-async function initChunkedUpload(request: NextRequest) {
+async function cleanupExpiredSessions(): Promise<void> {
+  try {
+    const pool = getDirectDbPool();
+    await pool.query(`delete from upload_chunk_sessions where created_at < now() - interval '1 hour'`);
+  } catch (error) {
+    console.warn("[ChunkedUpload] cleanup failed:", error);
+  }
+}
+
+async function authorize(request: NextRequest) {
   const token = request.headers.get("authorization")?.replace("Bearer ", "");
   if (!token) {
-    return NextResponse.json({ error: "未授权" }, { status: 401 });
+    return { error: NextResponse.json({ error: "未授权" }, { status: 401 }) };
   }
 
   const client = getSupabaseClient(token);
   const { data: { user }, error: authError } = await client.auth.getUser(token);
   if (authError) {
-    console.log("Chunked upload auth error:", authError.message);
-    return NextResponse.json({ error: `认证失败: ${authError.message}` }, { status: 401 });
+    return { error: NextResponse.json({ error: `认证失败: ${authError.message}` }, { status: 401 }) };
   }
   if (!user) {
-    return NextResponse.json({ error: "用户不存在或令牌已过期，请重新登录" }, { status: 401 });
+    return { error: NextResponse.json({ error: "用户不存在或令牌已过期，请重新登录" }, { status: 401 }) };
   }
 
-  // 获取用户角色
   const { data: userProfile } = await client
     .from("profiles")
     .select("role")
     .eq("user_id", user.id)
     .single();
-  
-  const userRole = userProfile?.role || "guest";
+
+  return {
+    client,
+    user,
+    userRole: userProfile?.role || "guest",
+  };
+}
+
+async function initChunkedUpload(request: NextRequest) {
+  await ensureChunkUploadSchema();
+  await cleanupExpiredSessions();
+
+  const auth = await authorize(request);
+  if ("error" in auth) return auth.error;
+
+  const { user, userRole } = auth;
   const isAdminOrVolunteer = userRole === "admin" || userRole === "volunteer";
 
   const body = await request.json();
@@ -81,25 +110,28 @@ async function initChunkedUpload(request: NextRequest) {
 
   const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
   const sessionId = `${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+  const pool = getDirectDbPool();
 
-  uploadSessions.set(sessionId, {
-    fileId: '',
-    fileName,
-    fileSize,
-    mimeType,
-    totalChunks,
-    uploadedChunks: new Set<number>(),
-    chunks: new Array(totalChunks),
-    title,
-    description: description || '',
-    categoryId,
-    semester: semester || '',
-    course: course || '',
-    tags: tags || [],
-    userId: user.id,
-    createdAt: Date.now(),
-    isAdminOrVolunteer,
-  });
+  await pool.query(
+    `insert into upload_chunk_sessions (
+      id, file_name, file_size, mime_type, total_chunks, title, description, category_id, semester, course, tags, user_id, is_admin_or_volunteer, created_at
+    ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,now())`,
+    [
+      sessionId,
+      fileName,
+      fileSize,
+      mimeType || "application/octet-stream",
+      totalChunks,
+      title,
+      description || "",
+      categoryId,
+      semester || "",
+      course || "",
+      JSON.stringify(tags || []),
+      user.id,
+      isAdminOrVolunteer,
+    ]
+  );
 
   return NextResponse.json({
     sessionId,
@@ -108,61 +140,61 @@ async function initChunkedUpload(request: NextRequest) {
   });
 }
 
-/**
- * 上传单个分块
- */
 async function uploadChunk(request: NextRequest) {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) {
-    return NextResponse.json({ error: "未授权" }, { status: 401 });
-  }
+  await ensureChunkUploadSchema();
 
+  const auth = await authorize(request);
+  if ("error" in auth) return auth.error;
+
+  const { user } = auth;
   const formData = await request.formData();
   const sessionId = formData.get("sessionId") as string;
-  const chunkIndex = parseInt(formData.get("chunkIndex") as string);
+  const chunkIndex = parseInt(formData.get("chunkIndex") as string, 10);
   const chunk = formData.get("chunk") as File;
 
-  if (!sessionId || isNaN(chunkIndex) || !chunk) {
+  if (!sessionId || Number.isNaN(chunkIndex) || !chunk) {
     return NextResponse.json({ error: "缺少必要参数" }, { status: 400 });
   }
 
-  const session = uploadSessions.get(sessionId);
+  const pool = getDirectDbPool();
+  const { rows: sessionRows } = await pool.query(
+    `select id, user_id, total_chunks from upload_chunk_sessions where id = $1 and user_id = $2 limit 1`,
+    [sessionId, user.id]
+  );
+
+  const session = sessionRows[0];
   if (!session) {
     return NextResponse.json({ error: "上传会话不存在或已过期" }, { status: 404 });
   }
 
-  // 存储分块
   const chunkBuffer = Buffer.from(await chunk.arrayBuffer());
-  session.chunks[chunkIndex] = chunkBuffer;
-  session.uploadedChunks.add(chunkIndex);
+  await pool.query(
+    `insert into upload_chunk_parts (session_id, chunk_index, chunk_data)
+     values ($1, $2, $3)
+     on conflict (session_id, chunk_index) do update set chunk_data = excluded.chunk_data, created_at = now()`,
+    [sessionId, chunkIndex, chunkBuffer]
+  );
+
+  const { rows: countRows } = await pool.query(
+    `select count(*)::int as count from upload_chunk_parts where session_id = $1`,
+    [sessionId]
+  );
 
   return NextResponse.json({
     success: true,
     chunkIndex,
-    uploadedChunks: session.uploadedChunks.size,
-    totalChunks: session.totalChunks,
+    uploadedChunks: Number(countRows[0]?.count || 0),
+    totalChunks: Number(session.total_chunks || 0),
   });
 }
 
-/**
- * 完成分块上传并合并文件
- */
 async function completeChunkedUpload(request: NextRequest) {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
-  if (!token) {
-    return NextResponse.json({ error: "未授权" }, { status: 401 });
-  }
+  await ensureChunkUploadSchema();
 
-  const client = getSupabaseClient(token);
-  const { data: { user }, error: authError } = await client.auth.getUser(token);
-  if (authError) {
-    console.log("Complete upload auth error:", authError.message);
-    return NextResponse.json({ error: `认证失败: ${authError.message}` }, { status: 401 });
-  }
-  if (!user) {
-    return NextResponse.json({ error: "用户不存在或令牌已过期，请重新登录" }, { status: 401 });
-  }
+  const auth = await authorize(request);
+  if ("error" in auth) return auth.error;
 
+  const { user } = auth;
   const body = await request.json();
   const { sessionId } = body;
 
@@ -170,52 +202,59 @@ async function completeChunkedUpload(request: NextRequest) {
     return NextResponse.json({ error: "缺少会话ID" }, { status: 400 });
   }
 
-  const session = uploadSessions.get(sessionId);
+  const pool = getDirectDbPool();
+  const { rows: sessionRows } = await pool.query(
+    `select * from upload_chunk_sessions where id = $1 and user_id = $2 limit 1`,
+    [sessionId, user.id]
+  );
+  const session = sessionRows[0];
   if (!session) {
     return NextResponse.json({ error: "上传会话不存在或已过期" }, { status: 404 });
   }
 
-  if (session.uploadedChunks.size !== session.totalChunks || session.chunks.some((part) => !part)) {
-    return NextResponse.json({ 
-      error: `分块不完整，已上传 ${session.uploadedChunks.size}/${session.totalChunks}` 
+  const { rows: partRows } = await pool.query(
+    `select chunk_index, chunk_data from upload_chunk_parts where session_id = $1 order by chunk_index asc`,
+    [sessionId]
+  );
+
+  const totalChunks = Number(session.total_chunks || 0);
+  if (partRows.length !== totalChunks) {
+    return NextResponse.json({
+      error: `分块不完整，已上传 ${partRows.length}/${totalChunks}`,
     }, { status: 400 });
   }
 
   try {
-    // 合并所有分块
-    const completeBuffer = Buffer.concat(session.chunks);
-    console.log(`合并完成: ${session.fileName}, 大小: ${(completeBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+    const buffers = partRows.map((part) => Buffer.isBuffer(part.chunk_data) ? part.chunk_data : Buffer.from(part.chunk_data));
+    const completeBuffer = Buffer.concat(buffers);
+    console.log(`合并完成: ${session.file_name}, 大小: ${(completeBuffer.length / 1024 / 1024).toFixed(2)}MB`);
 
-    // 上传到对象存储
-    const { uploadFile } = await import("@/lib/storage");
-    const fileKey = await uploadFile(completeBuffer, session.fileName, session.mimeType);
+    const fileKey = await uploadFile(completeBuffer, session.file_name, session.mime_type);
 
-    // 检查是否是图片
-    const isImage = session.mimeType.startsWith("image/");
+    const isImage = String(session.mime_type || "").startsWith("image/");
     let previewUrl: string | null = null;
     if (isImage) {
       previewUrl = await getFileUrl(fileKey, 30 * 24 * 3600);
     }
 
-    // 保存到数据库
-    // 所有用户上传的资料都需要审核
+    const client = auth.client;
     const { data, error } = await client
       .from("files")
       .insert({
         title: session.title,
         description: session.description,
-        file_name: session.fileName,
+        file_name: session.file_name,
         file_key: fileKey,
         file_size: completeBuffer.length,
-        file_type: session.fileName.split(".").pop() || "unknown",
-        mime_type: session.mimeType,
-        category_id: session.categoryId,
+        file_type: session.file_name.split(".").pop() || "unknown",
+        mime_type: session.mime_type,
+        category_id: session.category_id,
         uploader_id: user.id,
         semester: session.semester,
         course: session.course,
         tags: session.tags,
         preview_url: previewUrl,
-        is_active: false, // 所有用户上传都需要审核
+        is_active: false,
       })
       .select()
       .single();
@@ -224,25 +263,26 @@ async function completeChunkedUpload(request: NextRequest) {
       throw new Error(error.message);
     }
 
-    // 查询分类名称
     const { data: category } = await client
       .from("categories")
       .select("name")
-      .eq("id", session.categoryId)
+      .eq("id", session.category_id)
       .single();
 
-    // 清理会话
-    uploadSessions.delete(sessionId);
+    await Promise.all([
+      pool.query(`delete from upload_chunk_parts where session_id = $1`, [sessionId]),
+      pool.query(`delete from upload_chunk_sessions where id = $1`, [sessionId]),
+    ]);
 
     return NextResponse.json({
       success: true,
       file: { ...data, categories: category },
-      needsReview: true, // 所有上传都需要审核
+      needsReview: true,
     });
   } catch (error) {
     console.error("完成上传失败:", error);
-    return NextResponse.json({ 
-      error: `上传失败: ${error instanceof Error ? error.message : '未知错误'}` 
+    return NextResponse.json({
+      error: `上传失败: ${error instanceof Error ? error.message : '未知错误'}`,
     }, { status: 500 });
   }
 }
