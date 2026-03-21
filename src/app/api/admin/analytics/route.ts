@@ -63,6 +63,18 @@ function parseUserAgent(userAgent: string): { browser: string; os: string; devic
   return { browser, os, device };
 }
 
+type PageViewRow = {
+  id: string;
+  page_path: string;
+  page_type: string;
+  referrer: string | null;
+  ip_address: string | null;
+  session_id: string | null;
+  user_agent: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+};
+
 export async function GET(request: NextRequest) {
   try {
     const supabase = getSupabaseClient();
@@ -91,7 +103,7 @@ export async function GET(request: NextRequest) {
       }
 
       // 解析每条记录的User-Agent
-      const detailedViews = pageViews?.map(view => {
+      const detailedViews = pageViews?.map((view: PageViewRow) => {
         const { browser, os, device } = parseUserAgent(view.user_agent || "");
         return {
           id: view.id,
