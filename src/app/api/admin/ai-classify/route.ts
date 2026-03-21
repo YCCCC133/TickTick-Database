@@ -653,7 +653,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const targetFileMap = new Map(
-      (targetFiles || []).map((file) => [file.id, file as { id: string; uploader_id: string; is_active: boolean }])
+      (targetFiles || []).map((file: { id: string; uploader_id: string; is_active: boolean }) => [file.id, file])
     );
 
     // 先更新需要改分类/标题的文件
