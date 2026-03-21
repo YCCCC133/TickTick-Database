@@ -913,7 +913,7 @@ export default function AdminPage() {
   };
 
   const handleFileSearch = () => {
-    fetchFiles(1);
+    setFilePagination((prev) => ({ ...prev, page: 1 }));
   };
 
   const handleCreateCategory = async () => {
