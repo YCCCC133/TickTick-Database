@@ -103,7 +103,7 @@ export async function uploadFile(
       Body: file,
       ContentType: mimeType,
       CacheControl: "public, max-age=31536000",
-    }, (err, data) => {
+    }, (err) => {
       if (err) {
         console.error(`[COS] 上传失败: ${fileName}`, err);
         reject(new Error(`文件上传失败: ${err.message}`));
@@ -123,8 +123,7 @@ export async function uploadFile(
 export async function uploadStream(
   stream: AsyncIterable<Buffer> | NodeJS.ReadableStream,
   fileName: string,
-  mimeType: string,
-  _contentLength?: number
+  mimeType: string
 ): Promise<string> {
   // 将流转换为 Buffer
   const chunks: Buffer[] = [];
@@ -188,7 +187,9 @@ export async function headFile(key: string): Promise<{ contentLength?: number } 
         console.error(`[COS] HEAD失败: ${key}`, err);
         resolve(null);
       } else {
-        resolve({ contentLength: Number((data as any)?.headers?.["content-length"] || (data as any)?.headers?.["Content-Length"] || 0) || undefined });
+        const result = data as { ContentLength?: number; headers?: Record<string, string | number | string[] | undefined> };
+        const contentLength = Number(result.ContentLength || result.headers?.["content-length"] || result.headers?.["Content-Length"] || 0) || undefined;
+        resolve({ contentLength });
       }
     });
   });
@@ -381,8 +382,8 @@ export async function deleteFiles(keys: string[]): Promise<{
         console.error(`[COS] 批量删除失败:`, err);
         resolve({ success: [], failed: keys, deleted: 0 });
       } else {
-        const deleted = (data.Deleted || []).map((d: any) => d.Key);
-        const errors = (data.Error || []).map((e: any) => e.Key);
+        const deleted = (data.Deleted || []).map((item) => item.Key);
+        const errors = (data.Error || []).map((item) => item.Key);
         console.log(`[COS] 批量删除完成: 成功 ${deleted.length}, 失败 ${errors.length}`);
         resolve({ success: deleted, failed: errors, deleted: deleted.length });
       }
