@@ -44,6 +44,7 @@ const FileCard = memo(function FileCard({
   const fileColor = FILE_TYPE_COLORS[file.file_type.toLowerCase()] || "#005BA3";
   const [currentPreviewUrl, setCurrentPreviewUrl] = useState<string | undefined>(() => file.preview_url || imagePreviewCache.get(file.id) || undefined);
   const [imageError, setImageError] = useState(false);
+  const [previewFallback, setPreviewFallback] = useState(false);
 
   // 判断文件类型
   const isPDF = file.mime_type === "application/pdf" || file.file_type.toLowerCase() === "pdf";
@@ -52,7 +53,7 @@ const FileCard = memo(function FileCard({
 
   // 获取预览图URL（图片类型）
   const getImagePreviewSrc = () => {
-    if (resolvedPreviewUrl) {
+    if (resolvedPreviewUrl && !previewFallback) {
       return resolvedPreviewUrl;
     }
     // 如果是图片，使用代理接口
@@ -85,6 +86,12 @@ const FileCard = memo(function FileCard({
 
   // 处理图片加载失败
   const handleImageError = () => {
+    if (!previewFallback && resolvedPreviewUrl) {
+      setPreviewFallback(true);
+      setImageError(false);
+      imagePreviewCache.delete(file.id);
+      return;
+    }
     setImageError(true);
   };
 
