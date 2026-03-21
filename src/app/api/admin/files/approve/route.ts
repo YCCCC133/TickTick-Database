@@ -170,7 +170,7 @@ export async function PUT(request: NextRequest) {
         return NextResponse.json({ error: stateError.message }, { status: 500 });
       }
 
-      const publishableFiles = (fileStates || []).filter((file) => !file.is_active);
+      const publishableFiles = (fileStates || []).filter((file: { id: string; uploader_id: string; is_active: boolean }) => !file.is_active);
 
       const updateData = { 
         is_active: true,
