@@ -1,6 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 
+type UserProfileRow = {
+  id: string;
+  user_id: string;
+  email: string;
+  name: string | null;
+  real_name: string | null;
+  student_id: string | null;
+  phone: string | null;
+  school: string | null;
+  is_verified: boolean;
+  role: string;
+  is_active: boolean;
+  avatar: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type UserPointRow = {
+  user_id: string;
+  balance: number;
+};
+
 // 获取用户列表
 export async function GET(request: NextRequest) {
   try {
@@ -78,16 +100,18 @@ export async function GET(request: NextRequest) {
     }
 
     // 获取每个用户的积分 - 使用 user_id 关联
-    const userIds = users?.map(u => u.user_id).filter(Boolean) || [];
+    const userIds = ((users || []) as UserProfileRow[]).map((u) => u.user_id).filter(Boolean);
     const { data: pointsData } = await client
       .from("user_points")
       .select("user_id, balance")
       .in("user_id", userIds);
 
-    const pointsMap = new Map(pointsData?.map(p => [p.user_id, p.balance]) || []);
+    const pointsMap = new Map<string, number>(
+      (pointsData || []).map((p: UserPointRow) => [p.user_id, p.balance])
+    );
 
     // 组合数据 - 使用 user_id 获取积分
-    const usersWithPoints = users?.map(user => ({
+    const usersWithPoints = (users || []).map((user: UserProfileRow) => ({
       ...user,
       points: pointsMap.get(user.user_id) || 0,
     }));
