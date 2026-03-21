@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
       .select("id, name");
 
     const categoryMap_byName: Record<string, string> = {};
-    categories?.forEach(cat => {
+    categories?.forEach((cat: { id: string; name: string }) => {
       categoryMap_byName[cat.name] = cat.id;
     });
 
