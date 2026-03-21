@@ -202,7 +202,7 @@ export async function GET(request: NextRequest) {
       .gte("created_at", start.toISOString())
       .lte("created_at", end.toISOString());
     
-    const uniqueVisitors = new Set(uniqueIps?.map(v => v.ip_address) || []).size;
+    const uniqueVisitors = new Set(uniqueIps?.map((v: { ip_address: string | null }) => v.ip_address) || []).size;
 
     // 4. 获取页面类型统计
     const { data: pageTypeStats } = await supabase
