@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Category } from "@/types";
 import { toast } from "sonner";
+import { getStoredUploadToken, uploadFileDirectToCos } from "@/lib/browser-upload";
 
 interface FileUploadDialogProps {
   open: boolean;
@@ -250,140 +251,7 @@ export default function FileUploadDialog({
     }
   };
 
-  const LARGE_FILE_THRESHOLD = 1 * 1024 * 1024; // 1MB 以上走 COS 直传，绕开 Vercel body 限制
-
-  const uploadFileDirectToCos = async (
-    file: File,
-    metadata: { title: string; description: string; categoryId: string; semester: string; course: string; tags: string[] },
-    token: string,
-    onProgress: (progress: number, speed: string) => void
-  ): Promise<{ success: boolean }> => {
-    const readErrorMessage = async (response: Response, fallback: string) => {
-      try {
-        const text = await response.text();
-        if (!text) return fallback;
-        try {
-          const json = JSON.parse(text);
-          return json?.error || json?.message || fallback;
-        } catch {
-          return text.slice(0, 300);
-        }
-      } catch {
-        return fallback;
-      }
-    };
-
-    // 1. 初始化 COS 直传
-    const initResponse = await fetch("/api/files/upload-direct", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`,
-        "x-upload-action": "init",
-      },
-      body: JSON.stringify({
-        fileName: file.name,
-        fileSize: file.size,
-        mimeType: file.type,
-        title: metadata.title,
-        description: metadata.description,
-        categoryId: metadata.categoryId,
-        semester: metadata.semester,
-        course: metadata.course,
-        tags: metadata.tags,
-      }),
-    });
-
-    if (!initResponse.ok) {
-      throw new Error(await readErrorMessage(initResponse, "初始化上传失败"));
-    }
-
-    const { uploadUrl, fileKey } = await initResponse.json();
-    if (!uploadUrl || !fileKey) {
-      throw new Error("初始化上传失败：缺少上传地址");
-    }
-
-    const uploadResult = await new Promise<{ success: boolean }>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      let startTime = Date.now();
-      let lastLoaded = 0;
-
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) {
-          const progress = Math.round((event.loaded / event.total) * 100);
-          
-          const elapsed = (Date.now() - startTime) / 1000;
-          const loadedSinceLast = event.loaded - lastLoaded;
-          const speed = elapsed > 0 ? loadedSinceLast / elapsed : 0;
-          lastLoaded = event.loaded;
-          startTime = Date.now();
-
-          let speedText = "";
-          if (speed > 1024 * 1024) {
-            speedText = `${(speed / 1024 / 1024).toFixed(1)} MB/s`;
-          } else if (speed > 1024) {
-            speedText = `${(speed / 1024).toFixed(1)} KB/s`;
-          } else {
-            speedText = `${speed.toFixed(0)} B/s`;
-          }
-
-          onProgress(progress, speedText);
-        }
-      };
-
-      xhr.onload = async () => {
-        if (xhr.status < 200 || xhr.status >= 300) {
-          reject(new Error(`COS 上传失败 (${xhr.status})`));
-          return;
-        }
-
-        try {
-          const completeResponse = await fetch("/api/files/upload-direct", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${token}`,
-              "x-upload-action": "complete",
-            },
-            body: JSON.stringify({
-              fileKey,
-              fileName: file.name,
-              fileSize: file.size,
-              mimeType: file.type || "application/octet-stream",
-              title: metadata.title,
-              description: metadata.description,
-              categoryId: metadata.categoryId,
-              semester: metadata.semester,
-              course: metadata.course,
-              tags: metadata.tags,
-            }),
-          });
-
-          if (!completeResponse.ok) {
-            reject(new Error(await readErrorMessage(completeResponse, "完成上传失败")));
-            return;
-          }
-
-          onProgress(100, "");
-          resolve({ success: true });
-        } catch (error) {
-          reject(error instanceof Error ? error : new Error("完成上传失败"));
-        }
-      };
-
-      xhr.onerror = () => reject(new Error("网络错误"));
-      xhr.ontimeout = () => reject(new Error("上传超时"));
-
-      xhr.open("PUT", uploadUrl);
-      xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
-      xhr.timeout = 10 * 60 * 1000;
-      xhr.send(file);
-    });
-
-    return uploadResult;
-  };
-
-  // 上传单个文件（带进度跟踪）- 大文件走 COS 直传
+  // 上传单个文件（带进度跟踪）- 全部走 COS 直传
   const uploadSingleFile = (
     item: FileItem,
     onProgress: (progress: number, speed: string) => void
@@ -396,95 +264,24 @@ export default function FileUploadDialog({
         return;
       }
 
-      // 大文件使用 COS 直传，避免 Vercel 单请求体积限制
-      if (item.file.size > LARGE_FILE_THRESHOLD) {
-        console.log(`使用 COS 直传: ${item.file.name} (${(item.file.size / 1024 / 1024).toFixed(1)}MB)`);
-        try {
-          const result = await uploadFileDirectToCos(
-            item.file,
-            {
-              title: item.title,
-              description: item.description,
-              categoryId: item.categoryId,
-              semester: item.semester,
-              course: item.course,
-              tags: [],
-            },
-            token,
-            onProgress
-          );
-          resolve(result);
-        } catch (error) {
-          reject(error);
-        }
-        return;
+      try {
+        const result = await uploadFileDirectToCos(
+          item.file,
+          {
+            title: item.title,
+            description: item.description,
+            categoryId: item.categoryId,
+            semester: item.semester,
+            course: item.course,
+            tags: [],
+          },
+          token,
+          onProgress
+        );
+        resolve(result);
+      } catch (error) {
+        reject(error);
       }
-
-      // 小文件直接上传
-      const formData = new FormData();
-      formData.append("file", item.file);
-      formData.append("title", item.title);
-      formData.append("description", item.description);
-      formData.append("categoryId", item.categoryId);
-      formData.append("semester", item.semester);
-      formData.append("course", item.course);
-      formData.append("tags", JSON.stringify([]));
-
-      const xhr = new XMLHttpRequest();
-      
-      // 进度跟踪
-      let startTime = Date.now();
-      let lastLoaded = 0;
-      
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) {
-          const progress = Math.round((event.loaded / event.total) * 100);
-          
-          // 计算上传速度
-          const elapsed = (Date.now() - startTime) / 1000;
-          const loadedSinceLast = event.loaded - lastLoaded;
-          const speed = elapsed > 0 ? loadedSinceLast / elapsed : 0;
-          lastLoaded = event.loaded;
-          startTime = Date.now();
-          
-          let speedText = "";
-          if (speed > 1024 * 1024) {
-            speedText = `${(speed / 1024 / 1024).toFixed(1)} MB/s`;
-          } else if (speed > 1024) {
-            speedText = `${(speed / 1024).toFixed(1)} KB/s`;
-          } else {
-            speedText = `${speed.toFixed(0)} B/s`;
-          }
-          
-          onProgress(progress, speedText);
-        }
-      };
-
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const data = JSON.parse(xhr.responseText);
-            resolve({ success: true, compression: data.compression });
-          } catch {
-            reject(new Error("解析响应失败"));
-          }
-        } else {
-          try {
-            const data = JSON.parse(xhr.responseText);
-            reject(new Error(data.error || `上传失败 (${xhr.status})`));
-          } catch {
-            reject(new Error(`上传失败 (${xhr.status})`));
-          }
-        }
-      };
-
-      xhr.onerror = () => reject(new Error("网络错误"));
-      xhr.ontimeout = () => reject(new Error("上传超时"));
-
-      xhr.open("POST", "/api/files/upload");
-      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-      xhr.timeout = 10 * 60 * 1000; // 10分钟超时
-      xhr.send(formData);
     });
   };
 
@@ -509,38 +306,55 @@ export default function FileUploadDialog({
     let compressedCount = 0;
     let totalSaved = 0;
     const MAX_RETRY = 3; // 最大重试次数
+    const concurrency = 3;
+    const completed = { value: 0 };
 
-    for (let i = 0; i < pendingItems.length; i++) {
-      const item = pendingItems[i];
-      setUploadProgress({ current: i + 1, total: pendingItems.length });
+    const mapWithConcurrency = async <T, U>(
+      items: T[],
+      limit: number,
+      mapper: (item: T, index: number) => Promise<U>
+    ): Promise<U[]> => {
+      const results: U[] = new Array(items.length);
+      let nextIndex = 0;
+      const workers = Array.from({ length: Math.max(1, limit) }, async () => {
+        while (true) {
+          const current = nextIndex++;
+          if (current >= items.length) return;
+          results[current] = await mapper(items[current], current);
+        }
+      });
+      await Promise.all(workers);
+      return results;
+    };
+
+    await mapWithConcurrency(pendingItems, concurrency, async (item) => {
       updateFileItem(item.id, { status: "uploading", progress: 0, speed: "", retryCount: item.retryCount || 0 });
-      
-      // 带重试的上传
+
       let lastError: string = "";
       for (let retry = 0; retry <= MAX_RETRY; retry++) {
         try {
           if (retry > 0) {
             updateFileItem(item.id, { retryCount: retry });
             toast.info(`正在重试上传 ${item.file.name} (${retry}/${MAX_RETRY})`);
-            await new Promise(resolve => setTimeout(resolve, 1000 * retry)); // 指数退避
+            await new Promise(resolve => setTimeout(resolve, 1000 * retry));
           }
 
           const result = await uploadSingleFile(item, (progress, speed) => {
             updateFileItem(item.id, { progress, speed });
           });
-          
+
           updateFileItem(item.id, { status: "success", progress: 100 });
           successCount++;
-          
+
           if (result.compression) {
             compressedCount++;
             const saved = result.compression.originalSize - result.compression.compressedSize;
             totalSaved += saved;
             toast.info(`${item.file.name} 已压缩 ${result.compression.ratio}`);
           }
-          
+
           lastError = "";
-          break; // 成功则跳出重试循环
+          break;
         } catch (error) {
           lastError = error instanceof Error ? error.message : "上传失败";
           if (retry === MAX_RETRY) {
@@ -549,7 +363,10 @@ export default function FileUploadDialog({
           }
         }
       }
-    }
+
+      completed.value += 1;
+      setUploadProgress({ current: completed.value, total: pendingItems.length });
+    });
 
     setUploading(false);
 
