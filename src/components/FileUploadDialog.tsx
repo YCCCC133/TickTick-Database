@@ -226,9 +226,9 @@ export default function FileUploadDialog({
     }
   };
 
-  const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB 每块，适配 Vercel 请求体限制
-  const CHUNK_CONCURRENCY = 2;
-  const LARGE_FILE_THRESHOLD = 1 * 1024 * 1024; // 1MB 以上使用分块上传，提升上线稳定性
+  const CHUNK_SIZE = 512 * 1024; // 512KB 每块，降低单请求体积，提升 Vercel 稳定性
+  const CHUNK_CONCURRENCY = 1; // 串行上传更稳，避免 serverless 并发抖动
+  const LARGE_FILE_THRESHOLD = 4 * 1024 * 1024; // 4MB 以上使用分块上传，兼顾稳定和体验
 
   const runWithConcurrency = async <T, U>(
     items: T[],
@@ -257,6 +257,21 @@ export default function FileUploadDialog({
     token: string,
     onProgress: (progress: number, speed: string) => void
   ): Promise<{ success: boolean }> => {
+    const readErrorMessage = async (response: Response, fallback: string) => {
+      try {
+        const text = await response.text();
+        if (!text) return fallback;
+        try {
+          const json = JSON.parse(text);
+          return json?.error || json?.message || fallback;
+        } catch {
+          return text.slice(0, 300);
+        }
+      } catch {
+        return fallback;
+      }
+    };
+
     // 1. 初始化分块上传
     const initResponse = await fetch("/api/files/upload-chunked", {
       method: "POST",
@@ -279,39 +294,54 @@ export default function FileUploadDialog({
     });
 
     if (!initResponse.ok) {
-      const error = await initResponse.json();
-      throw new Error(error.error || "初始化上传失败");
+      throw new Error(await readErrorMessage(initResponse, "初始化上传失败"));
     }
 
     const { sessionId, totalChunks: chunks } = await initResponse.json();
     
-    // 2. 并发上传每个分块（有限并发，提升大文件速度）
+    // 2. 逐个上传分块；每片单独重试，减少整批回滚
     let uploadedBytes = 0;
     let lastTime = Date.now();
     let lastUploadedBytes = 0;
 
-    await runWithConcurrency(Array.from({ length: chunks }, (_, i) => i), CHUNK_CONCURRENCY, async (i) => {
+    for (let i = 0; i < chunks; i++) {
       const start = i * CHUNK_SIZE;
       const end = Math.min(start + CHUNK_SIZE, file.size);
       const chunk = file.slice(start, end);
 
-      const formData = new FormData();
-      formData.append("sessionId", sessionId);
-      formData.append("chunkIndex", i.toString());
-      formData.append("chunk", chunk);
+      let lastChunkError = "";
+      for (let retry = 0; retry <= 2; retry++) {
+        try {
+          if (retry > 0) {
+            await new Promise((resolve) => setTimeout(resolve, 500 * retry));
+          }
 
-      const chunkResponse = await fetch("/api/files/upload-chunked", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${token}`,
-          "x-upload-action": "chunk",
-        },
-        body: formData,
-      });
+          const formData = new FormData();
+          formData.append("sessionId", sessionId);
+          formData.append("chunkIndex", i.toString());
+          formData.append("chunk", chunk);
 
-      if (!chunkResponse.ok) {
-        const error = await chunkResponse.json();
-        throw new Error(error.error || `分块 ${i + 1} 上传失败`);
+          const chunkResponse = await fetch("/api/files/upload-chunked", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${token}`,
+              "x-upload-action": "chunk",
+            },
+            body: formData,
+          });
+
+          if (!chunkResponse.ok) {
+            throw new Error(await readErrorMessage(chunkResponse, `分块 ${i + 1}/${chunks} 上传失败`));
+          }
+
+          lastChunkError = "";
+          break;
+        } catch (error) {
+          lastChunkError = error instanceof Error ? error.message : `分块 ${i + 1}/${chunks} 上传失败`;
+          if (retry === 2) {
+            throw new Error(lastChunkError);
+          }
+        }
       }
 
       // 更新进度
@@ -336,7 +366,7 @@ export default function FileUploadDialog({
       }
 
       onProgress(progress, speedText);
-    });
+    }
 
     // 3. 完成上传
     const completeResponse = await fetch("/api/files/upload-chunked", {
@@ -350,8 +380,7 @@ export default function FileUploadDialog({
     });
 
     if (!completeResponse.ok) {
-      const error = await completeResponse.json();
-      throw new Error(error.error || "完成上传失败");
+      throw new Error(await readErrorMessage(completeResponse, "完成上传失败"));
     }
 
     return { success: true };
