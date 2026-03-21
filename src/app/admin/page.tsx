@@ -1505,26 +1505,66 @@ export default function AdminPage() {
         });
       }
 
-      // 2. 批量上传
-      const formData = new FormData();
-      filesArray.forEach(file => {
-        formData.append("files", file);
+      // 2. 逐个直传 COS，避免经过 Vercel 的文件体积限制与函数超时
+      const token = getStoredUploadToken();
+      if (!token) throw new Error("请先登录");
+
+      const categoryNameToId = new Map<string, string>();
+      categories.forEach((category) => {
+        categoryNameToId.set(category.name, category.id);
       });
-      formData.append("categoryMap", JSON.stringify(categoryMap));
+      const fallbackCategoryId = categoryNameToId.get("学习资料") || categories[0]?.id || "";
+      if (!fallbackCategoryId) {
+        throw new Error("未找到可用分类");
+      }
 
-      const token = localStorage.getItem("token");
-      const uploadResponse = await fetch("/api/files/batch-upload", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
+      const concurrency = 3;
+      const results = await (async () => {
+        const output: Array<{ success: boolean; fileName: string; error?: string }> = new Array(filesArray.length);
+        let nextIndex = 0;
 
-      const uploadData = await uploadResponse.json();
-      if (!uploadResponse.ok) throw new Error(uploadData.error);
+        const workers = Array.from({ length: concurrency }, async () => {
+          while (true) {
+            const current = nextIndex++;
+            if (current >= filesArray.length) return;
 
-      toast.success(`上传完成！成功 ${uploadData.uploaded} 个，失败 ${uploadData.failed} 个`, { id: toastId });
+            const file = filesArray[current];
+            const categoryName = categoryMap[file.name] || "学习资料";
+            const categoryId = categoryNameToId.get(categoryName) || fallbackCategoryId;
+
+            try {
+              await uploadFileDirectToCos(
+                file,
+                {
+                  title: file.name.replace(/\.[^/.]+$/, ""),
+                  description: "",
+                  categoryId,
+                  semester: "",
+                  course: "",
+                  tags: [],
+                },
+                token,
+                () => undefined
+              );
+              output[current] = { success: true, fileName: file.name };
+            } catch (error) {
+              output[current] = {
+                success: false,
+                fileName: file.name,
+                error: error instanceof Error ? error.message : "上传失败",
+              };
+            }
+          }
+        });
+
+        await Promise.all(workers);
+        return output;
+      })();
+
+      const uploaded = results.filter((item) => item?.success).length;
+      const failed = results.filter((item) => item && !item.success).length;
+
+      toast.success(`上传完成！成功 ${uploaded} 个，失败 ${failed} 个`, { id: toastId });
       setSelectedFiles([]);
       fetchFiles();
     } catch (error) {
