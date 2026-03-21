@@ -50,10 +50,7 @@ export default function Home() {
   const pageRef = useRef(0);
   const requestLockRef = useRef(false);
   const footerRef = useRef<HTMLDivElement | null>(null);
-  const bottomGestureIdleTimerRef = useRef<number | null>(null);
-  const bottomGestureAutoLoadTimerRef = useRef<number | null>(null);
-  const bottomGestureScoreRef = useRef(0);
-  const [footerFullyVisible, setFooterFullyVisible] = useState(false);
+  const bottomLoadArmedRef = useRef(true);
   const [bottomTriggerVisible, setBottomTriggerVisible] = useState(false);
   const [bottomTriggerReady, setBottomTriggerReady] = useState(false);
   const [bottomTriggerProgress, setBottomTriggerProgress] = useState(0);
@@ -249,108 +246,63 @@ export default function Home() {
   }, [loading, hasMore, fetchFiles]);
 
   useEffect(() => {
-    const footerEl = footerRef.current;
-    if (!footerEl) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        const fullyVisible = entry.isIntersecting && entry.intersectionRatio >= 0.98;
-        setFooterFullyVisible(fullyVisible);
-        if (!fullyVisible) {
-          bottomGestureScoreRef.current = 0;
-          setBottomTriggerVisible(false);
-          setBottomTriggerReady(false);
-          setBottomTriggerProgress(0);
-        }
-      },
-      {
-        threshold: [0.98, 1],
-      }
-    );
-
-    observer.observe(footerEl);
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
     let rafId = 0;
-
-    const clearTimers = () => {
-      if (bottomGestureIdleTimerRef.current !== null) {
-        window.clearTimeout(bottomGestureIdleTimerRef.current);
-        bottomGestureIdleTimerRef.current = null;
-      }
-      if (bottomGestureAutoLoadTimerRef.current !== null) {
-        window.clearTimeout(bottomGestureAutoLoadTimerRef.current);
-        bottomGestureAutoLoadTimerRef.current = null;
-      }
-    };
-
-    const resetTrigger = () => {
-      clearTimers();
-      bottomGestureScoreRef.current = 0;
-      setBottomTriggerVisible(false);
-      setBottomTriggerReady(false);
-      setBottomTriggerProgress(0);
-    };
 
     const getBottomProximity = () => {
       const doc = document.documentElement;
       const bottomGap = Math.max(0, doc.scrollHeight - (window.scrollY + window.innerHeight));
-      const activationRange = Math.max(240, Math.min(720, window.innerHeight * 0.72));
-      const rawProgress = Math.max(0, Math.min(1, 1 - bottomGap / activationRange));
-      return { bottomGap, progress: rawProgress };
+      const revealRange = Math.max(360, Math.min(960, window.innerHeight * 1.1));
+      const loadThreshold = Math.max(96, Math.min(240, window.innerHeight * 0.2));
+      const rearmThreshold = Math.max(320, Math.min(720, window.innerHeight * 0.65));
+      const rawProgress = Math.max(0, Math.min(1, 1 - bottomGap / revealRange));
+      return { bottomGap, revealRange, loadThreshold, rearmThreshold, progress: rawProgress };
     };
 
     const onScroll = () => {
       if (rafId) cancelAnimationFrame(rafId);
       rafId = window.requestAnimationFrame(() => {
-        if (!hasMore || loading || !footerFullyVisible) {
-          resetTrigger();
+        const { bottomGap, revealRange, loadThreshold, rearmThreshold, progress } = getBottomProximity();
+        const hasNextPage = hasMore && !loading;
+
+        if (!hasMore) {
+          bottomLoadArmedRef.current = true;
+          setBottomTriggerVisible(false);
+          setBottomTriggerReady(false);
+          setBottomTriggerProgress(0);
           return;
         }
 
-        const { bottomGap, progress } = getBottomProximity();
-        const isNearBottom = bottomGap <= Math.max(160, window.innerHeight * 0.22);
-
-        if (!isNearBottom) {
-          resetTrigger();
-          return;
-        }
-
-        bottomGestureScoreRef.current = progress;
-        setBottomTriggerVisible(true);
+        const visible = bottomGap <= revealRange || loading;
+        setBottomTriggerVisible(visible);
         setBottomTriggerProgress(1 - Math.pow(1 - progress, 5));
 
-        if (progress >= 0.72) {
-          setBottomTriggerReady(true);
-        } else if (progress < 0.5) {
+        if (loading) {
           setBottomTriggerReady(false);
+        } else {
+          setBottomTriggerReady(bottomGap <= loadThreshold);
         }
 
-        if (bottomGestureAutoLoadTimerRef.current !== null) {
-          window.clearTimeout(bottomGestureAutoLoadTimerRef.current);
+        if (bottomGap > rearmThreshold) {
+          bottomLoadArmedRef.current = true;
         }
-        bottomGestureAutoLoadTimerRef.current = window.setTimeout(() => {
-          if (!hasMore || loading || !footerFullyVisible) return;
-          const { bottomGap: latestGap } = getBottomProximity();
-          if (latestGap <= 2) {
-            resetTrigger();
-            loadMore();
-          }
-        }, 120);
+
+        if (hasNextPage && bottomLoadArmedRef.current && bottomGap <= loadThreshold) {
+          bottomLoadArmedRef.current = false;
+          loadMore();
+        }
       });
     };
 
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll, { passive: true });
 
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
-      clearTimers();
       window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
     };
-  }, [hasMore, loading, loadMore, footerFullyVisible]);
+  }, [hasMore, loading, loadMore]);
 
   // 头像上传处理
   const handleAvatarUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -778,10 +730,10 @@ export default function Home() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className={`text-[14px] font-semibold tracking-tight transition-all duration-300 ${bottomTriggerReady ? "text-[#8A4A06]" : "text-[#7C5C18]"}`}>
-                            {bottomTriggerReady ? "松手加载更多" : "继续下滑"}
+                            {loading ? "正在加载更多" : bottomTriggerReady ? "即将自动加载" : "继续下滑"}
                           </div>
                           <div className={`mt-0.5 text-[11px] transition-opacity duration-300 ${bottomTriggerReady ? "text-[#B45309]/80" : "text-[#C47A15]/70"}`}>
-                            {bottomTriggerReady ? "已就绪" : "完成触发"}
+                            {loading ? "请稍候" : "鼠标滚轮 / 触控板 / 手机滑动都可自然触发"}
                           </div>
                         </div>
                       </div>
