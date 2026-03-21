@@ -455,7 +455,6 @@ export default function AdminPage() {
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const fileListRequestRef = useRef<AbortController | null>(null);
   const fileListRequestSeqRef = useRef(0);
-  const fileSearchDebounceRef = useRef<number | null>(null);
   
   // 文件详情对话框
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
@@ -560,25 +559,14 @@ export default function AdminPage() {
   useEffect(() => {
     if (!isVolunteer || activeTab !== "files") return;
 
-    if (fileSearchDebounceRef.current) {
-      window.clearTimeout(fileSearchDebounceRef.current);
-    }
-
-    fileSearchDebounceRef.current = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       fetchFiles(1);
-      fileSearchDebounceRef.current = null;
-    }, 250);
+    }, 150);
 
-    return () => {
-      if (fileSearchDebounceRef.current) {
-        window.clearTimeout(fileSearchDebounceRef.current);
-        fileSearchDebounceRef.current = null;
-      }
-    };
+    return () => window.clearTimeout(timer);
   }, [
     isVolunteer,
     activeTab,
-    fileSearch,
     fileCategoryFilter,
     fileFeaturedFilter,
     fileStatusFilter,
@@ -589,9 +577,6 @@ export default function AdminPage() {
 
   useEffect(() => {
     return () => {
-      if (fileSearchDebounceRef.current) {
-        window.clearTimeout(fileSearchDebounceRef.current);
-      }
       fileListRequestRef.current?.abort();
     };
   }, []);
@@ -928,10 +913,6 @@ export default function AdminPage() {
   };
 
   const handleFileSearch = () => {
-    if (fileSearchDebounceRef.current) {
-      window.clearTimeout(fileSearchDebounceRef.current);
-      fileSearchDebounceRef.current = null;
-    }
     setFilePagination((prev) => ({ ...prev, page: 1 }));
     fetchFiles(1);
   };
