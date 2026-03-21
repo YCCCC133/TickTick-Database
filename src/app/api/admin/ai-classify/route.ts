@@ -474,7 +474,7 @@ export async function GET(request: NextRequest) {
       fileName: file.file_name,
       fileType: file.file_type,
       fileKey: file.file_key,
-      currentCategory: categories.map[file.category_id] || "未分类",
+      currentCategory: file.category_id ? categories.map[file.category_id] || "未分类" : "未分类",
       categoryId: file.category_id,
       course: file.course,
       description: file.description,
