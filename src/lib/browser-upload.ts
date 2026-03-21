@@ -9,6 +9,11 @@ export interface DirectUploadMetadata {
   tags: string[];
 }
 
+export interface AvatarDirectUploadResult {
+  key: string;
+  url: string;
+}
+
 export function getStoredUploadToken(): string | null {
   if (typeof window === "undefined") return null;
 
@@ -156,6 +161,82 @@ export async function uploadFileDirectToCos(
     xhr.open("PUT", uploadUrl);
     xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
     xhr.timeout = 10 * 60 * 1000;
+    xhr.send(file);
+  });
+}
+
+export async function uploadAvatarDirectToCos(
+  file: File,
+  token: string,
+  onProgress?: (progress: number, speed: string) => void
+): Promise<AvatarDirectUploadResult> {
+  const initResponse = await fetch("/api/upload/avatar-direct", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      fileName: file.name,
+      fileSize: file.size,
+      mimeType: file.type || "image/jpeg",
+    }),
+  });
+
+  if (!initResponse.ok) {
+    throw new Error(await readErrorMessage(initResponse, "初始化头像上传失败"));
+  }
+
+  const { uploadUrl, fileKey, url } = await initResponse.json();
+  if (!uploadUrl || !fileKey || !url) {
+    throw new Error("初始化头像上传失败：缺少上传地址");
+  }
+
+  return new Promise<AvatarDirectUploadResult>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let startTime = Date.now();
+    let lastLoaded = 0;
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable || !onProgress) return;
+
+      const progress = Math.round((event.loaded / event.total) * 100);
+      const elapsed = (Date.now() - startTime) / 1000;
+      const loadedSinceLast = event.loaded - lastLoaded;
+      const speed = elapsed > 0 ? loadedSinceLast / elapsed : 0;
+      lastLoaded = event.loaded;
+      startTime = Date.now();
+
+      let speedText = "";
+      if (speed > 1024 * 1024) {
+        speedText = `${(speed / 1024 / 1024).toFixed(1)} MB/s`;
+      } else if (speed > 1024) {
+        speedText = `${(speed / 1024).toFixed(1)} KB/s`;
+      } else {
+        speedText = `${speed.toFixed(0)} B/s`;
+      }
+
+      onProgress(progress, speedText);
+    };
+
+    xhr.onload = () => {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(`头像上传失败 (${xhr.status})`));
+        return;
+      }
+
+      if (onProgress) {
+        onProgress(100, "");
+      }
+      resolve({ key: fileKey, url });
+    };
+
+    xhr.onerror = () => reject(new Error("网络错误"));
+    xhr.ontimeout = () => reject(new Error("上传超时"));
+
+    xhr.open("PUT", uploadUrl);
+    xhr.setRequestHeader("Content-Type", file.type || "image/jpeg");
+    xhr.timeout = 2 * 60 * 1000;
     xhr.send(file);
   });
 }

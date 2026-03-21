@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useAuth } from "@/contexts/AuthContext";
-import { getStoredUploadToken, uploadFileDirectToCos } from "@/lib/browser-upload";
+import { getStoredUploadToken, uploadAvatarDirectToCos, uploadFileDirectToCos } from "@/lib/browser-upload";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Pagination } from "@/components/ui/pagination";
@@ -1145,25 +1145,20 @@ export default function AdminPage() {
 
     setAvatarUploading(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("type", "avatar");
+      const token = getStoredUploadToken();
+      if (!token) {
+        throw new Error("请先登录");
+      }
 
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
-
-      setEditForm({ ...editForm, avatar: data.url });
+      const { url } = await uploadAvatarDirectToCos(file, token);
+      setEditForm((prev) => ({ ...prev, avatar: url }));
       toast.success("头像上传成功");
     } catch (error) {
       console.error("Avatar upload error:", error);
       toast.error("头像上传失败");
     } finally {
       setAvatarUploading(false);
+      e.target.value = "";
     }
   };
 
@@ -1188,6 +1183,13 @@ export default function AdminPage() {
       if (!response.ok) throw new Error(data.error);
 
       toast.success("更新成功");
+      setUsers((prev) =>
+        prev.map((user) =>
+          user.id === editingUser.id
+            ? { ...user, ...editForm }
+            : user
+        )
+      );
       setEditDialogOpen(false);
       fetchUsers();
     } catch (error) {

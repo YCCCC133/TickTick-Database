@@ -15,6 +15,7 @@ import FileUploadDialog from "@/components/FileUploadDialog";
 import AuthDialog from "@/components/AuthDialog";
 import FileDetailDialog from "@/components/FileDetailDialog";
 import Footer from "@/components/Footer";
+import { uploadAvatarDirectToCos } from "@/lib/browser-upload";
 import {
   Dialog,
   DialogContent,
@@ -378,26 +379,19 @@ export default function Home() {
     setProfileUploading(true);
     try {
       const token = localStorage.getItem("token");
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("type", "avatar");
+      if (!token) {
+        throw new Error("请先登录");
+      }
 
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
-
-      setProfileForm(prev => ({ ...prev, avatar: data.url }));
+      const { url } = await uploadAvatarDirectToCos(file, token);
+      setProfileForm(prev => ({ ...prev, avatar: url }));
       toast.success("头像上传成功");
     } catch (error) {
       console.error("Avatar upload error:", error);
       toast.error("头像上传失败");
     } finally {
       setProfileUploading(false);
+      e.target.value = "";
     }
   }, []);
 
