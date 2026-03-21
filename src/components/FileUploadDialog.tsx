@@ -359,7 +359,7 @@ export default function FileUploadDialog({
     return uploadResult;
   };
 
-  // 上传单个文件（带进度跟踪）- 支持大文件分块上传
+  // 上传单个文件（带进度跟踪）- 大文件走 COS 直传
   const uploadSingleFile = (
     item: FileItem,
     onProgress: (progress: number, speed: string) => void
@@ -593,7 +593,7 @@ export default function FileUploadDialog({
             批量上传资料
           </DialogTitle>
           <DialogDescription className="text-[#64748B]">
-            支持最多上传 {MAX_FILES} 个文件，单个文件最大 100MB。大文件自动使用分块上传，失败自动重试3次。
+            支持最多上传 {MAX_FILES} 个文件，单个文件最大 100MB。大文件自动使用 COS 直传，失败自动重试3次。
             {!isAdminOrVolunteer && (
               <span className="block mt-1 text-amber-600 text-sm">
                 ⚠️ 您上传的资料需要管理员审核后才能上架。
@@ -846,7 +846,7 @@ export default function FileUploadDialog({
                             {item.retryCount && item.retryCount > 0 
                               ? `重试中 (${item.retryCount}/3)...` 
                               : item.file.size > LARGE_FILE_THRESHOLD 
-                                ? "分块上传中..." 
+                                ? "COS 直传中..." 
                                 : "上传中..."}
                           </span>
                           <span className="text-xs text-[#005BA3] font-medium">{item.progress || 0}%</span>
