@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { getFileUrl, uploadFile } from "@/lib/storage";
 import { getDirectDbPool } from "@/lib/direct-db";
+import { getRequestAuthToken } from "@/lib/request-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +12,7 @@ const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB 每块，适配 Vercel 请求体限�
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
 async function authorize(request: NextRequest) {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
+  const token = getRequestAuthToken(request);
   if (!token) {
     return { error: NextResponse.json({ error: "未授权" }, { status: 401 }) };
   }

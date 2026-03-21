@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { uploadFile } from "@/lib/storage";
+import { getRequestAuthToken } from "@/lib/request-auth";
 
 const FILE_UPLOAD_CONCURRENCY = 3;
 
@@ -59,7 +60,7 @@ async function classifyFiles(
 export async function POST(request: NextRequest) {
   try {
     const baseUrl = request.nextUrl.origin;
-    const token = request.headers.get("authorization")?.replace("Bearer ", "");
+    const token = getRequestAuthToken(request);
     
     if (!token) {
       return NextResponse.json({ error: "请先登录" }, { status: 401 });

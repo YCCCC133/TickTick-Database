@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { uploadFile, getFileUrl } from "@/lib/storage";
 import { PDFDocument } from "pdf-lib";
+import { getRequestAuthToken } from "@/lib/request-auth";
 
 // Next.js App Router 配置
 export const runtime = 'nodejs';
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
     const contentLength = request.headers.get("content-length");
     console.log(`Content-Length: ${contentLength ? (parseInt(contentLength) / 1024 / 1024).toFixed(2) + ' MB' : 'unknown'}`);
     
-    const token = request.headers.get("authorization")?.replace("Bearer ", "");
+    const token = getRequestAuthToken(request);
     
     if (!token) {
       console.log("Upload failed: No token");

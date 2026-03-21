@@ -44,6 +44,30 @@ interface FileItem {
   retryCount?: number; // 重试次数
 }
 
+function getStoredUploadToken(): string | null {
+  if (typeof window === "undefined") return null;
+
+  const localToken = localStorage.getItem("token");
+  if (localToken) return localToken;
+
+  const sessionJson = localStorage.getItem("auth_session");
+  if (sessionJson) {
+    try {
+      const session = JSON.parse(sessionJson) as { access_token?: string };
+      if (session.access_token) return session.access_token;
+    } catch {
+      // ignore
+    }
+  }
+
+  const cookieMatch = document.cookie.match(/(?:^|;\s*)auth_token=([^;]+)/);
+  if (cookieMatch?.[1]) {
+    return decodeURIComponent(cookieMatch[1]);
+  }
+
+  return null;
+}
+
 export default function FileUploadDialog({
   open,
   onOpenChange,
@@ -365,7 +389,7 @@ export default function FileUploadDialog({
     onProgress: (progress: number, speed: string) => void
   ): Promise<{ success: boolean; compression?: { originalSize: number; compressedSize: number; ratio: string } }> => {
     return new Promise(async (resolve, reject) => {
-      const token = localStorage.getItem("token");
+      const token = getStoredUploadToken();
       
       if (!token) {
         reject(new Error("请先登录"));

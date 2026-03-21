@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { generateFileKey, getFileUrl, getUploadUrl, headFile } from "@/lib/storage";
 import { getPublicOrigin } from "@/lib/public-origin";
+import { getRequestAuthToken } from "@/lib/request-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,7 +11,7 @@ export const maxDuration = 60;
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
 async function authorize(request: NextRequest) {
-  const token = request.headers.get("authorization")?.replace("Bearer ", "");
+  const token = getRequestAuthToken(request);
   if (!token) {
     return { error: NextResponse.json({ error: "未授权" }, { status: 401 }) };
   }
