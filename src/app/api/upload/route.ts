@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { uploadFile, getFileUrl } from "@/lib/storage";
+import { getPublicOrigin } from "@/lib/public-origin";
 
 /**
  * 通用文件上传接口
@@ -62,8 +63,7 @@ export async function POST(request: NextRequest) {
     const key = await uploadFile(buffer, fileName, file.type);
     
     // 生成访问URL（使用代理URL，避免预签名URL的403问题）
-    const domain = process.env.COZE_PROJECT_DOMAIN_DEFAULT || "localhost:5000";
-    const baseUrl = domain.startsWith("http") ? domain : `https://${domain}`;
+    const baseUrl = getPublicOrigin(request);
     const url = `${baseUrl}/api/files/avatar/${key}`;
 
     console.log(`[Upload] 头像上传成功: ${key}`);

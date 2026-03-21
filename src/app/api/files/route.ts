@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cache, CACHE_TTL } from "@/lib/cache";
 import { directQuery } from "@/lib/direct-db";
+import { getPublicOrigin } from "@/lib/public-origin";
 
 type FilesHomeResponse = {
   files: Array<Record<string, unknown>>;
@@ -90,21 +91,18 @@ function buildSearchScoreSql(variants: string[], startIndex: number): string {
 }
 
 /**
- * 转换preview_url为代理URL
- * COS直接URL会返回403，需要使用代理URL
+ * 转换preview_url为当前站点的代理URL
  */
-function convertPreviewUrl(previewUrl: string | null, fileId: string): string | null {
+function convertPreviewUrl(previewUrl: string | null, fileId: string, baseUrl: string): string | null {
   if (!previewUrl) return null;
   
-  // 如果已经是代理URL，直接返回
-  if (previewUrl.includes('/api/files/preview/') || previewUrl.includes('/api/files/avatar/')) {
-    return previewUrl;
+  const proxyPath = previewUrl.match(/\/api\/files\/(?:preview|avatar)\/.*$/)?.[0];
+  if (proxyPath) {
+    return `${baseUrl}${proxyPath}`;
   }
   
   // 如果是COS直接URL，转换为代理URL
   if (previewUrl.includes('.cos.')) {
-    const domain = process.env.COZE_PROJECT_DOMAIN_DEFAULT || "localhost:5000";
-    const baseUrl = domain.startsWith("http") ? domain : `https://${domain}`;
     return `${baseUrl}/api/files/${fileId}/proxy`;
   }
   
@@ -113,6 +111,7 @@ function convertPreviewUrl(previewUrl: string | null, fileId: string): string | 
 
 export async function GET(request: NextRequest) {
   try {
+    const baseUrl = getPublicOrigin(request);
     const searchParams = request.nextUrl.searchParams;
     const category = searchParams.get("category");
     const search = searchParams.get("search");
@@ -241,7 +240,7 @@ export async function GET(request: NextRequest) {
 
     const filesWithRelations = rows.map((file) => ({
       ...file,
-      preview_url: convertPreviewUrl(file.preview_url, file.id),
+      preview_url: convertPreviewUrl(file.preview_url, file.id, baseUrl),
       categories: file.category_name ? { name: file.category_name } : null,
       profiles: file.uploader_name ? {
         name: file.uploader_name,

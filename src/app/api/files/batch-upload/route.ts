@@ -27,14 +27,11 @@ async function mapWithConcurrency<T, U>(
 // AI 智能分类函数
 async function classifyFiles(
   fileNames: string[],
-  headers: Record<string, string>
+  headers: Record<string, string>,
+  baseUrl: string
 ): Promise<Record<string, string>> {
   try {
     // 调用分类 API
-    const baseUrl = process.env.COZE_PROJECT_DOMAIN_DEFAULT 
-      ? `https://${process.env.COZE_PROJECT_DOMAIN_DEFAULT}` 
-      : "http://localhost:5000";
-    
     const response = await fetch(`${baseUrl}/api/files/classify`, {
       method: "POST",
       headers: {
@@ -61,6 +58,7 @@ async function classifyFiles(
 // 批量上传文件
 export async function POST(request: NextRequest) {
   try {
+    const baseUrl = request.nextUrl.origin;
     const token = request.headers.get("authorization")?.replace("Bearer ", "");
     
     if (!token) {
@@ -112,7 +110,7 @@ export async function POST(request: NextRequest) {
       const headers: Record<string, string> = {
         Authorization: `Bearer ${token}`,
       };
-      aiCategoryMap = await classifyFiles(fileNames, headers);
+      aiCategoryMap = await classifyFiles(fileNames, headers, baseUrl);
       console.log("AI 分类结果:", aiCategoryMap);
     }
 
