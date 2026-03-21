@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 
+type RatingRow = {
+  user_id: string;
+};
+
+type ProfileRow = {
+  user_id: string;
+  name: string | null;
+  avatar: string | null;
+};
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -31,7 +41,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 获取所有用户ID
-    const userIds = [...new Set(data?.map(r => r.user_id).filter(Boolean) || [])];
+    const userIds = [...new Set((data || []).map((r: RatingRow) => r.user_id).filter(Boolean) || [])];
     
     // 批量查询用户信息 - 使用 user_id 关联
     const profilesMap: Record<string, { name: string; avatar?: string }> = {};
@@ -41,16 +51,16 @@ export async function GET(request: NextRequest) {
         .select("user_id, name, avatar")
         .in("user_id", userIds);
       
-      profiles?.forEach(p => {
+      profiles?.forEach((p: ProfileRow) => {
         profilesMap[p.user_id] = { name: p.name, avatar: p.avatar };
       });
     }
 
     // 组装数据
-    const ratingsWithProfiles = data?.map(rating => ({
+    const ratingsWithProfiles = (data || []).map((rating: RatingRow & Record<string, unknown>) => ({
       ...rating,
       profiles: profilesMap[rating.user_id] || null,
-    })) || [];
+    }));
 
     return NextResponse.json({ ratings: ratingsWithProfiles });
   } catch (error) {
