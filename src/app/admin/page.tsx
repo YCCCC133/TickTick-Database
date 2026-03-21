@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useAuth } from "@/contexts/AuthContext";
+import { getStoredUploadToken, uploadFileDirectToCos } from "@/lib/browser-upload";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Pagination } from "@/components/ui/pagination";
