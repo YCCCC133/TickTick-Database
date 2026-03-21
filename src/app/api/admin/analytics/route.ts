@@ -212,7 +212,7 @@ export async function GET(request: NextRequest) {
       .lte("created_at", end.toISOString());
 
     const pageTypeCounts: Record<string, number> = {};
-    pageTypeStats?.forEach((item) => {
+    pageTypeStats?.forEach((item: { page_type: string | null }) => {
       const type = item.page_type || "page";
       pageTypeCounts[type] = (pageTypeCounts[type] || 0) + 1;
     });
