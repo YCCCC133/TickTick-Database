@@ -71,6 +71,7 @@ const PDFThumbnail = memo(function PDFThumbnail({
   const containerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [fallbackTriggered, setFallbackTriggered] = useState(false);
   const [displayUrl, setDisplayUrl] = useState<string | null>(() => {
     // 初始化时检查是否有缓存或外部传入的预览URL
     return previewUrl || loadedFilesCache.get(fileId) || null;
@@ -123,8 +124,17 @@ const PDFThumbnail = memo(function PDFThumbnail({
       loadedFilesCache.set(fileId, previewUrl);
       // 从失败集合中移除
       failedFilesSet.delete(fileId);
+      setFallbackTriggered(false);
     }
   }, [previewUrl, fileId, displayUrl]);
+
+  const handlePreviewError = () => {
+    if (fallbackTriggered) return;
+    setFallbackTriggered(true);
+    loadedFilesCache.delete(fileId);
+    setDisplayUrl(null);
+    setError(false);
+  };
 
   // 使用 Intersection Observer 懒加载
   useEffect(() => {
@@ -289,6 +299,7 @@ const PDFThumbnail = memo(function PDFThumbnail({
           alt={alt}
           className="w-full h-full object-cover"
           loading="lazy"
+          onError={handlePreviewError}
         />
       </div>
     );
