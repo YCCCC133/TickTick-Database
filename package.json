@@ -5,7 +5,7 @@
   "scripts": {
     "build": "bash ./scripts/build.sh",
     "dev": "bash ./scripts/dev.sh",
-    "preinstall": "npx only-allow pnpm",
+    "preinstall": "node ./scripts/ensure-pnpm.mjs",
     "lint": "eslint",
     "start": "bash ./scripts/start.sh",
     "ts-check": "tsc -p tsconfig.json"
