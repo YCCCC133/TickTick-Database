@@ -652,7 +652,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: targetFilesError.message }, { status: 500 });
     }
 
-    const targetFileMap = new Map(
+    const targetFileMap = new Map<string, { id: string; uploader_id: string; is_active: boolean }>(
       (targetFiles || []).map((file: { id: string; uploader_id: string; is_active: boolean }) => [file.id, file])
     );
 
