@@ -241,6 +241,7 @@ pnpm ts-check  # TypeScript 类型检查
 - 文件访问尽量走代理 URL，不直接暴露 COS 原始地址
 - 上传/下载/审核相关改动后，至少做一次 `pnpm lint` 和 `pnpm ts-check`
 - Git 提交前可以先执行 `bash scripts/setup-git-hooks.sh`，启用 pre-commit 自动检查
+- 如果你要自动同步到 GitHub，可以后台运行 `bash scripts/auto-sync-github.sh`
 
 ## 备注
 

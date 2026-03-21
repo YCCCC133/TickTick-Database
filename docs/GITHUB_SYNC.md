@@ -69,7 +69,19 @@ bash scripts/setup-git-hooks.sh
 
 这会把 Git 的 `core.hooksPath` 指向 `.githooks/`，并给钩子脚本加执行权限。
 
-## 5. 被忽略的内容
+## 5. 实时自动同步
+
+如果你希望本地文件一保存就自动同步到 GitHub，可以启动后台监控脚本：
+
+```bash
+bash scripts/auto-sync-github.sh
+```
+
+建议先确保 GitHub 凭据已配置好，这样脚本才能无交互完成 `pull --rebase`、commit 和 push。
+
+如果你想让它在 macOS 登录后自动运行，可以再把这个脚本接到系统启动项里；当前仓库保持最小方案，不强制写入系统服务配置。
+
+## 6. 被忽略的内容
 
 仓库根目录的 `.gitignore` 已忽略：
 
@@ -79,7 +91,7 @@ bash scripts/setup-git-hooks.sh
 - 日志、缓存、构建报告、TypeScript build info
 - `.DS_Store`、IDE 配置、临时文件
 
-## 6. 注意事项
+## 7. 注意事项
 
 - 不要把 `.env.local`、数据库密码、COS 密钥提交到 GitHub
 - 如果脚本提示没有 remote，先手动执行 `git remote add origin <github-url>`
