@@ -226,9 +226,9 @@ export default function FileUploadDialog({
     }
   };
 
-  const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB 每块
-  const CHUNK_CONCURRENCY = 4;
-  const LARGE_FILE_THRESHOLD = 10 * 1024 * 1024; // 10MB 以上使用分块上传
+  const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB 每块，适配 Vercel 请求体限制
+  const CHUNK_CONCURRENCY = 2;
+  const LARGE_FILE_THRESHOLD = 1 * 1024 * 1024; // 1MB 以上使用分块上传，提升上线稳定性
 
   const runWithConcurrency = async <T, U>(
     items: T[],
