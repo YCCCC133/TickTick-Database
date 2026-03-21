@@ -226,7 +226,7 @@ export async function GET(request: NextRequest) {
       .limit(1000);
 
     const pageCountMap = new Map<string, number>();
-    hotPages?.forEach((item) => {
+    hotPages?.forEach((item: { page_path: string }) => {
       pageCountMap.set(item.page_path, (pageCountMap.get(item.page_path) || 0) + 1);
     });
 
