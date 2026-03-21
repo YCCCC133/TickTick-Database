@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { directQuery } from "@/lib/direct-db";
+import { cache } from "@/lib/cache";
+
+const CACHE_HEADERS = {
+  "Cache-Control": "private, max-age=30, stale-while-revalidate=120",
+};
 
 type AdminStatsResponse = {
   totalFiles: number;
@@ -38,6 +43,11 @@ async function authorize(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const cached = cache.get<AdminStatsResponse>("admin:stats");
+    if (cached) {
+      return NextResponse.json({ ...cached, cached: true }, { headers: CACHE_HEADERS });
+    }
+
     const auth = await authorize(request);
     if ("error" in auth) return auth.error;
 
@@ -78,7 +88,9 @@ export async function GET(request: NextRequest) {
       generatedAt: new Date().toISOString(),
     };
 
-    return NextResponse.json(result);
+    cache.set("admin:stats", result, 30);
+
+    return NextResponse.json(result, { headers: CACHE_HEADERS });
   } catch (error) {
     console.error("Get admin stats error:", error);
     return NextResponse.json({ error: "获取统计数据失败" }, { status: 500 });

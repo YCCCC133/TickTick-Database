@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
+import { cache } from "@/lib/cache";
 
-// 获取时间范围
+const CACHE_HEADERS = {
+  "Cache-Control": "private, max-age=30, stale-while-revalidate=120",
+};
+
 function getDateRange(period: string): { start: Date; end: Date } {
   const end = new Date();
   const start = new Date();
-  
+
   switch (period) {
     case "today":
       start.setHours(0, 0, 0, 0);
@@ -26,15 +30,13 @@ function getDateRange(period: string): { start: Date; end: Date } {
       start.setDate(start.getDate() - 6);
       start.setHours(0, 0, 0, 0);
   }
-  
+
   return { start, end };
 }
 
-// 解析User-Agent
 function parseUserAgent(userAgent: string): { browser: string; os: string; device: string } {
   const ua = userAgent.toLowerCase();
-  
-  // 浏览器检测
+
   let browser = "未知";
   if (ua.includes("edg/") || ua.includes("edge")) browser = "Edge";
   else if (ua.includes("chrome/") && !ua.includes("edg")) browser = "Chrome";
@@ -42,8 +44,7 @@ function parseUserAgent(userAgent: string): { browser: string; os: string; devic
   else if (ua.includes("safari") && !ua.includes("chrome")) browser = "Safari";
   else if (ua.includes("opera") || ua.includes("opr/")) browser = "Opera";
   else if (ua.includes("msie") || ua.includes("trident")) browser = "IE";
-  
-  // 操作系统检测
+
   let os = "未知";
   if (ua.includes("windows nt 10")) os = "Windows 10";
   else if (ua.includes("windows nt 6.3")) os = "Windows 8.1";
@@ -54,12 +55,11 @@ function parseUserAgent(userAgent: string): { browser: string; os: string; devic
   else if (ua.includes("android")) os = "Android";
   else if (ua.includes("iphone") || ua.includes("ipad")) os = "iOS";
   else if (ua.includes("linux")) os = "Linux";
-  
-  // 设备类型检测
+
   let device = "桌面端";
   if (ua.includes("mobile") || ua.includes("android") || ua.includes("iphone")) device = "移动端";
   else if (ua.includes("tablet") || ua.includes("ipad")) device = "平板";
-  
+
   return { browser, os, device };
 }
 
@@ -84,17 +84,17 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "1000");
     const { start, end } = getDateRange(period);
+    const startIso = start.toISOString();
+    const endIso = end.toISOString();
+    const cacheKey = `admin:analytics:${period}`;
 
-    // 如果请求详细数据
     if (detail) {
       const offset = (page - 1) * limit;
-      
-      // 获取详细访问记录
       const { data: pageViews, error, count } = await supabase
         .from("page_views")
         .select("*", { count: "exact" })
-        .gte("created_at", start.toISOString())
-        .lte("created_at", end.toISOString())
+        .gte("created_at", startIso)
+        .lte("created_at", endIso)
         .order("created_at", { ascending: false })
         .range(offset, offset + limit - 1);
 
@@ -102,128 +102,108 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
 
-      // 解析每条记录的User-Agent
-      const detailedViews = pageViews?.map((view: PageViewRow) => {
-        const { browser, os, device } = parseUserAgent(view.user_agent || "");
-        return {
-          id: view.id,
-          pagePath: view.page_path,
-          pageType: view.page_type,
-          referrer: view.referrer,
-          ipAddress: view.ip_address,
-          sessionId: view.session_id,
-          userAgent: view.user_agent,
-          browser,
-          os,
-          device,
-          metadata: view.metadata,
-          createdAt: view.created_at,
-        };
-      }) || [];
+      const detailedViews =
+        pageViews?.map((view: PageViewRow) => {
+          const { browser, os, device } = parseUserAgent(view.user_agent || "");
+          return {
+            id: view.id,
+            pagePath: view.page_path,
+            pageType: view.page_type,
+            referrer: view.referrer,
+            ipAddress: view.ip_address,
+            sessionId: view.session_id,
+            userAgent: view.user_agent,
+            browser,
+            os,
+            device,
+            metadata: view.metadata,
+            createdAt: view.created_at,
+          };
+        }) || [];
 
-      return NextResponse.json({
-        period,
-        pageViews: detailedViews,
-        pagination: {
-          page,
-          limit,
-          total: count || 0,
-          totalPages: Math.ceil((count || 0) / limit),
+      return NextResponse.json(
+        {
+          period,
+          pageViews: detailedViews,
+          pagination: {
+            page,
+            limit,
+            total: count || 0,
+            totalPages: Math.ceil((count || 0) / limit),
+          },
+          dateRange: {
+            start: startIso,
+            end: endIso,
+          },
         },
-        dateRange: {
-          start: start.toISOString(),
-          end: end.toISOString(),
-        },
-      });
+        { headers: CACHE_HEADERS }
+      );
     }
 
-    // 以下是聚合数据的逻辑
-    // 1. 获取每日访问量
-    const { data: dailyViews } = await supabase
-      .from("page_views")
-      .select("created_at, ip_address")
-      .gte("created_at", start.toISOString())
-      .lte("created_at", end.toISOString());
+    const cached = cache.get<Record<string, unknown>>(cacheKey);
+    if (cached) {
+      return NextResponse.json({ ...cached, cached: true }, { headers: CACHE_HEADERS });
+    }
 
-    // 处理每日数据
-    const dailyStats: { date: string; views: number; uniqueVisitors: number }[] = [];
+    const [
+      dailyViewsResult,
+      totalViewsResult,
+      uniqueIpsResult,
+      pageTypeStatsResult,
+      hotPagesResult,
+      prevTotalViewsResult,
+    ] = await Promise.all([
+      supabase.from("page_views").select("created_at, ip_address").gte("created_at", startIso).lte("created_at", endIso),
+      supabase.from("page_views").select("*", { count: "exact", head: true }).gte("created_at", startIso).lte("created_at", endIso),
+      supabase.from("page_views").select("ip_address").gte("created_at", startIso).lte("created_at", endIso),
+      supabase.from("page_views").select("page_type").gte("created_at", startIso).lte("created_at", endIso),
+      supabase.from("page_views").select("page_path").gte("created_at", startIso).lte("created_at", endIso).limit(1000),
+      (() => {
+        const prevStart = new Date(start);
+        prevStart.setDate(prevStart.getDate() - (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+        const prevEnd = new Date(start);
+        return supabase.from("page_views").select("*", { count: "exact", head: true }).gte("created_at", prevStart.toISOString()).lt("created_at", prevEnd.toISOString());
+      })(),
+    ]);
+
+    const dailyViews = dailyViewsResult.data;
+    const totalViews = totalViewsResult.count || 0;
+    const uniqueIps = uniqueIpsResult.data;
+    const pageTypeStats = pageTypeStatsResult.data;
+    const hotPages = hotPagesResult.data;
+    const prevTotalViews = prevTotalViewsResult.count || 0;
+
     const dateMap = new Map<string, { views: number; ips: Set<string> }>();
-    
-    // 初始化日期
-    const currentStart = new Date(start);
-    while (currentStart <= end) {
-      const dateStr = currentStart.toISOString().split("T")[0];
-      dateMap.set(dateStr, { views: 0, ips: new Set() });
-      currentStart.setDate(currentStart.getDate() + 1);
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      dateMap.set(cursor.toISOString().split("T")[0], { views: 0, ips: new Set() });
+      cursor.setDate(cursor.getDate() + 1);
     }
 
-    // 统计数据
     if (dailyViews && Array.isArray(dailyViews)) {
-      const typedDailyViews = dailyViews as Array<{
-        created_at: string;
-        ip_address?: string | null;
-      }>;
-
-      typedDailyViews.forEach((view) => {
+      (dailyViews as Array<{ created_at: string; ip_address?: string | null }>).forEach((view) => {
         const createdAt = new Date(view.created_at);
         if (Number.isNaN(createdAt.getTime())) return;
-
         const dateStr = createdAt.toISOString().split("T")[0];
         const entry = dateMap.get(dateStr);
-        if (entry) {
-          entry.views++;
-          if (view.ip_address) {
-            entry.ips.add(view.ip_address);
-          }
-        }
+        if (!entry) return;
+        entry.views++;
+        if (view.ip_address) entry.ips.add(view.ip_address);
       });
     }
 
-    // 转换为数组格式
-    dateMap.forEach((value, date) => {
-      dailyStats.push({
-        date,
-        views: value.views,
-        uniqueVisitors: value.ips.size,
-      });
-    });
+    const dailyStats = Array.from(dateMap.entries()).map(([date, value]) => ({
+      date,
+      views: value.views,
+      uniqueVisitors: value.ips.size,
+    }));
 
-    // 2. 获取总览统计
-    const { count: totalViews } = await supabase
-      .from("page_views")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", start.toISOString())
-      .lte("created_at", end.toISOString());
-
-    // 3. 获取唯一访客数（按IP去重）
-    const { data: uniqueIps } = await supabase
-      .from("page_views")
-      .select("ip_address")
-      .gte("created_at", start.toISOString())
-      .lte("created_at", end.toISOString());
-    
     const uniqueVisitors = new Set(uniqueIps?.map((v: { ip_address: string | null }) => v.ip_address) || []).size;
-
-    // 4. 获取页面类型统计
-    const { data: pageTypeStats } = await supabase
-      .from("page_views")
-      .select("page_type")
-      .gte("created_at", start.toISOString())
-      .lte("created_at", end.toISOString());
-
     const pageTypeCounts: Record<string, number> = {};
     pageTypeStats?.forEach((item: { page_type: string | null }) => {
       const type = item.page_type || "page";
       pageTypeCounts[type] = (pageTypeCounts[type] || 0) + 1;
     });
-
-    // 5. 获取热门页面
-    const { data: hotPages } = await supabase
-      .from("page_views")
-      .select("page_path")
-      .gte("created_at", start.toISOString())
-      .lte("created_at", end.toISOString())
-      .limit(1000);
 
     const pageCountMap = new Map<string, number>();
     hotPages?.forEach((item: { page_path: string }) => {
@@ -235,31 +215,28 @@ export async function GET(request: NextRequest) {
       .slice(0, 10)
       .map(([path, count]) => ({ path, count }));
 
-    // 6. 获取访问趋势对比（与前一期相比）
-    const prevStart = new Date(start);
-    prevStart.setDate(prevStart.getDate() - (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-    const prevEnd = new Date(start);
+    const viewsGrowth = prevTotalViews ? ((totalViews - prevTotalViews) / prevTotalViews) * 100 : 0;
 
-    const { count: prevTotalViews } = await supabase
-      .from("page_views")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", prevStart.toISOString())
-      .lt("created_at", prevEnd.toISOString());
-
-    const viewsGrowth = prevTotalViews ? ((totalViews || 0) - prevTotalViews) / prevTotalViews * 100 : 0;
-
-    return NextResponse.json({
+    const result = {
       period,
       summary: {
-        totalViews: totalViews || 0,
+        totalViews,
         uniqueVisitors,
-        avgViewsPerDay: Math.round((totalViews || 0) / dailyStats.length),
+        avgViewsPerDay: Math.round(totalViews / Math.max(1, dailyStats.length)),
         viewsGrowth: viewsGrowth.toFixed(1),
       },
       dailyStats,
       pageTypeStats: pageTypeCounts,
       topPages,
-    });
+      dateRange: {
+        start: startIso,
+        end: endIso,
+      },
+    };
+
+    cache.set(cacheKey, result, 30);
+
+    return NextResponse.json(result, { headers: CACHE_HEADERS });
   } catch (error) {
     console.error("Analytics API error:", error);
     return NextResponse.json(

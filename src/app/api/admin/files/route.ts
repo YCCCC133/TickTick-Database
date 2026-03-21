@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { directQuery } from "@/lib/direct-db";
 
+const CACHE_HEADERS = {
+  "Cache-Control": "private, max-age=10, stale-while-revalidate=60",
+};
+
 const SEARCH_NORMALIZE_PATTERN = /[\s\p{P}\p{S}]+/gu;
 
 function normalizeSearchText(value: string): string {
@@ -240,7 +244,7 @@ export async function GET(request: NextRequest) {
         total,
         totalPages: Math.ceil(total / limit),
       },
-    });
+    }, { headers: CACHE_HEADERS });
   } catch (error) {
     console.error("Get admin files error:", error);
     return NextResponse.json({ error: "获取文件列表失败" }, { status: 500 });

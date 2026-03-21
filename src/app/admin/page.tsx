@@ -25,15 +25,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  Tooltip,
-} from "recharts";
-import {
   Users,
   FileText,
   Star,
@@ -50,7 +41,6 @@ import {
   GraduationCap,
   ChevronLeft,
   ChevronRight,
-  FileDown,
   Eye,
   ToggleLeft,
   ToggleRight,
@@ -73,9 +63,32 @@ import {
 import Link from "next/link";
 import { Category, File as FileType } from "@/types";
 import { toast } from "sonner";
-import FileDetailDialog from "@/components/FileDetailDialog";
-import FileUploadDialog from "@/components/FileUploadDialog";
 import { POINTS_CONFIG } from "@/types/points";
+
+const FileDetailDialog = dynamic(() => import("@/components/FileDetailDialog"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-[400px]">
+      <div className="animate-spin w-8 h-8 border-2 border-[#005BA3] border-t-transparent rounded-full" />
+    </div>
+  ),
+});
+
+const FileUploadDialog = dynamic(() => import("@/components/FileUploadDialog"), {
+  ssr: false,
+  loading: () => null,
+});
+
+const AnalyticsTab = dynamic(() => import("@/components/admin/AnalyticsTab"), {
+  ssr: false,
+  loading: () => (
+    <div className="glass-card p-6">
+      <div className="flex items-center justify-center h-[320px]">
+        <div className="animate-spin w-8 h-8 border-2 border-[#005BA3] border-t-transparent rounded-full" />
+      </div>
+    </div>
+  ),
+});
 
 // 动态导入 PDFViewer 组件，禁用 SSR
 const PDFViewer = dynamic(
@@ -552,10 +565,10 @@ export default function AdminPage() {
   }, [isVolunteer]);
 
   useEffect(() => {
-    if (isVolunteer) {
+    if (isVolunteer && activeTab === "users") {
       fetchUsers();
     }
-  }, [userPagination.page, roleFilter]);
+  }, [isVolunteer, activeTab, userPagination.page, roleFilter]);
 
   useEffect(() => {
     if (!isVolunteer || activeTab !== "files") return;
@@ -2267,219 +2280,13 @@ export default function AdminPage() {
 
         {/* Analytics Tab */}
         {activeTab === "analytics" && (
-          <>
-            {/* 时间范围选择 */}
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-2">
-                {[
-                  { value: "7days", label: "近7天" },
-                  { value: "30days", label: "近30天" },
-                  { value: "90days", label: "近90天" },
-                ].map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() => setAnalyticsPeriod(option.value)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                      analyticsPeriod === option.value
-                        ? "bg-[#005BA3] text-white"
-                        : "bg-white text-[#64748B] hover:bg-[#F0F7FF]"
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-              <Button
-                onClick={exportAnalyticsReport}
-                disabled={!analyticsData || analyticsLoading}
-                className="bg-[#005BA3] hover:bg-[#004A8C] flex items-center gap-2"
-              >
-                <FileDown className="w-4 h-4" />
-                导出报告
-              </Button>
-            </div>
-
-            {analyticsLoading ? (
-              <div className="flex items-center justify-center h-[400px]">
-                <div className="animate-spin w-8 h-8 border-2 border-[#005BA3] border-t-transparent rounded-full" />
-              </div>
-            ) : analyticsData ? (
-              <>
-                {/* 概览卡片 */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-                  <div className="neu-card p-5">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm text-[#64748B]">总访问量</span>
-                      <div className="w-9 h-9 rounded-lg bg-[#005BA3] flex items-center justify-center">
-                        <Eye className="w-4 h-4 text-white" />
-                      </div>
-                    </div>
-                    <div className="text-2xl font-bold text-[#1E293B]">
-                      {analyticsData.summary.totalViews.toLocaleString()}
-                    </div>
-                    <div className={`text-sm mt-1 ${parseFloat(analyticsData.summary.viewsGrowth) >= 0 ? "text-green-500" : "text-red-500"}`}>
-                      {parseFloat(analyticsData.summary.viewsGrowth) >= 0 ? "↑" : "↓"} {Math.abs(parseFloat(analyticsData.summary.viewsGrowth))}% 较前一期
-                    </div>
-                  </div>
-                  <div className="neu-card p-5">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm text-[#64748B]">独立访客</span>
-                      <div className="w-9 h-9 rounded-lg bg-[#059669] flex items-center justify-center">
-                        <Users className="w-4 h-4 text-white" />
-                      </div>
-                    </div>
-                    <div className="text-2xl font-bold text-[#1E293B]">
-                      {analyticsData.summary.uniqueVisitors.toLocaleString()}
-                    </div>
-                    <div className="text-sm text-[#94A3B8] mt-1">唯一IP数量</div>
-                  </div>
-                  <div className="neu-card p-5">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm text-[#64748B]">日均访问</span>
-                      <div className="w-9 h-9 rounded-lg bg-[#D97706] flex items-center justify-center">
-                        <Download className="w-4 h-4 text-white" />
-                      </div>
-                    </div>
-                    <div className="text-2xl font-bold text-[#1E293B]">
-                      {analyticsData.summary.avgViewsPerDay.toLocaleString()}
-                    </div>
-                    <div className="text-sm text-[#94A3B8] mt-1">次/天</div>
-                  </div>
-                  <div className="neu-card p-5">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm text-[#64748B]">访问趋势</span>
-                      <div className="w-9 h-9 rounded-lg bg-[#7C3AED] flex items-center justify-center">
-                        <Star className="w-4 h-4 text-white" />
-                      </div>
-                    </div>
-                    <div className="text-2xl font-bold text-[#1E293B]">
-                      {analyticsData.summary.viewsGrowth}%
-                    </div>
-                    <div className="text-sm text-[#94A3B8] mt-1">环比变化</div>
-                  </div>
-                </div>
-
-                {/* 访问趋势图表 */}
-                <div className="glass-card p-6 mb-8">
-                  <h2 className="text-lg font-semibold text-[#1E293B] mb-4">访问趋势</h2>
-                  <div className="h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={analyticsData.dailyStats}>
-                        <defs>
-                          <linearGradient id="colorViews" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#005BA3" stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor="#005BA3" stopOpacity={0}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-                        <XAxis 
-                          dataKey="date" 
-                          stroke="#94A3B8"
-                          tick={{ fontSize: 12 }}
-                          tickFormatter={(value) => value.slice(5)}
-                        />
-                        <YAxis stroke="#94A3B8" tick={{ fontSize: 12 }} />
-                        <Tooltip 
-                          contentStyle={{ 
-                            background: 'white', 
-                            border: '1px solid #E2E8F0',
-                            borderRadius: '8px',
-                            boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
-                          }}
-                          labelFormatter={(label) => label}
-                        />
-                        <Area 
-                          type="monotone" 
-                          dataKey="views" 
-                          stroke="#005BA3" 
-                          strokeWidth={2}
-                          fill="url(#colorViews)"
-                          name="访问量"
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* 页面类型统计 */}
-                  <div className="glass-card p-6">
-                    <h2 className="text-lg font-semibold text-[#1E293B] mb-4">页面类型分布</h2>
-                    <div className="space-y-3">
-                      {Object.entries(analyticsData.pageTypeStats)
-                        .sort((a, b) => b[1] - a[1])
-                        .map(([type, count]) => {
-                          const total = Object.values(analyticsData.pageTypeStats).reduce((a, b) => a + b, 0);
-                          const percentage = total > 0 ? ((count / total) * 100).toFixed(1) : 0;
-                          const typeLabels: Record<string, string> = {
-                            home: "首页",
-                            file_detail: "文件详情",
-                            download: "下载页",
-                            profile: "个人中心",
-                            rankings: "排行榜",
-                            search: "搜索页",
-                            admin: "管理后台",
-                            page: "其他页面",
-                            event: "事件追踪",
-                          };
-                          return (
-                            <div key={type} className="flex items-center gap-3">
-                              <div className="flex-1">
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className="text-sm text-[#475569]">
-                                    {typeLabels[type] || type}
-                                  </span>
-                                  <span className="text-sm font-medium text-[#1E293B]">
-                                    {count.toLocaleString()} ({percentage}%)
-                                  </span>
-                                </div>
-                                <div className="h-2 bg-[#F1F5F9] rounded-full overflow-hidden">
-                                  <div 
-                                    className="h-full bg-[#005BA3] rounded-full transition-all"
-                                    style={{ width: `${percentage}%` }}
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-
-                  {/* 热门页面 */}
-                  <div className="glass-card p-6">
-                    <h2 className="text-lg font-semibold text-[#1E293B] mb-4">热门页面 TOP 10</h2>
-                    <div className="space-y-2">
-                      {analyticsData.topPages.map((page, index) => (
-                        <div key={page.path} className="flex items-center gap-3 p-2 rounded-lg hover:bg-[#F8FAFC]">
-                          <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                            index < 3 ? "bg-[#005BA3] text-white" : "bg-[#E2E8F0] text-[#64748B]"
-                          }`}>
-                            {index + 1}
-                          </span>
-                          <span className="flex-1 text-sm text-[#475569] truncate">
-                            {page.path === "/" ? "首页" : page.path}
-                          </span>
-                          <span className="text-sm font-medium text-[#005BA3]">
-                            {page.count.toLocaleString()}
-                          </span>
-                        </div>
-                      ))}
-                      {analyticsData.topPages.length === 0 && (
-                        <div className="text-center py-8 text-[#94A3B8]">
-                          暂无数据
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="text-center py-12 text-[#94A3B8]">
-                暂无流量数据
-              </div>
-            )}
-          </>
+          <AnalyticsTab
+            analyticsData={analyticsData}
+            analyticsLoading={analyticsLoading}
+            analyticsPeriod={analyticsPeriod}
+            setAnalyticsPeriod={setAnalyticsPeriod}
+            exportAnalyticsReport={exportAnalyticsReport}
+          />
         )}
 
         {/* Files Tab */}
