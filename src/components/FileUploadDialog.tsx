@@ -662,9 +662,7 @@ export default function FileUploadDialog({
                           <span className="text-xs text-[#64748B]">
                             {item.retryCount && item.retryCount > 0 
                               ? `重试中 (${item.retryCount}/3)...` 
-                              : item.file.size > LARGE_FILE_THRESHOLD 
-                                ? "COS 直传中..." 
-                                : "上传中..."}
+                              : "COS 直传中..."}
                           </span>
                           <span className="text-xs text-[#005BA3] font-medium">{item.progress || 0}%</span>
                         </div>
