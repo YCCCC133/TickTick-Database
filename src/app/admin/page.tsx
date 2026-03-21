@@ -544,9 +544,10 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (isVolunteer) {
-      fetchCategories();
-      fetchStats();
-      fetchUsers();
+      void Promise.all([
+        fetchCategories(),
+        fetchStats(),
+      ]);
     }
   }, [isVolunteer]);
 
@@ -559,11 +560,7 @@ export default function AdminPage() {
   useEffect(() => {
     if (!isVolunteer || activeTab !== "files") return;
 
-    const timer = window.setTimeout(() => {
-      fetchFiles(1);
-    }, 150);
-
-    return () => window.clearTimeout(timer);
+    fetchFiles(1);
   }, [
     isVolunteer,
     activeTab,
@@ -595,9 +592,6 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!isVolunteer) return;
-
-    fetchStats();
-    fetchCategories();
 
     const refreshTimer = window.setInterval(() => {
       fetchStats();
@@ -877,18 +871,34 @@ export default function AdminPage() {
         headers: { Authorization: `Bearer ${token}` },
         signal: controller.signal,
       });
-      const data = await response.json();
+      const responseText = await response.text();
+      let data: Record<string, unknown> = {};
+      if (responseText) {
+        try {
+          data = JSON.parse(responseText) as Record<string, unknown>;
+        } catch {
+          data = { error: responseText.slice(0, 300) };
+        }
+      }
 
       if (controller.signal.aborted || requestId !== fileListRequestSeqRef.current) {
         return;
       }
 
+      const fileListData = data as {
+        files?: FileWithDetails[];
+        pagination?: Pagination;
+        error?: string;
+      };
+
       if (response.ok) {
-        setFiles(data.files || []);
-        setFilePagination(data.pagination);
+        setFiles(fileListData.files || []);
+        if (fileListData.pagination) {
+          setFilePagination(fileListData.pagination);
+        }
       } else {
-        console.error("Failed to fetch files:", data.error);
-        toast.error(data.error || "获取文件列表失败");
+        console.error("Failed to fetch files:", fileListData.error);
+        toast.error(fileListData.error || "获取文件列表失败");
       }
     } catch (error) {
       if (
@@ -899,7 +909,7 @@ export default function AdminPage() {
         return;
       }
       console.error("Failed to fetch files:", error);
-      toast.error("获取文件列表失败");
+      toast.error(error instanceof Error ? error.message : "获取文件列表失败");
     } finally {
       if (fileListRequestRef.current === controller) {
         fileListRequestRef.current = null;

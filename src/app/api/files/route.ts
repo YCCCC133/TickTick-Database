@@ -22,6 +22,7 @@ type FilesHomeRow = {
   uploader_avatar: string | null;
   uploader_real_name: string | null;
   uploader_student_id: string | null;
+  total_count: number;
   [key: string]: unknown;
 };
 
@@ -194,49 +195,39 @@ export async function GET(request: NextRequest) {
     const scoreSql = searchVariants.length > 0 ? buildSearchScoreSql(searchVariants, searchStartIndex) : "0";
     const dataParams = [...params, limit, offset];
     const rankingSelect = `${scoreSql} as relevance_score`;
-    const [countRows, rows] = await Promise.all([
-      directQuery<{ total: string }>(
-        `
-        select count(*)::int as total
+    const rows = await directQuery<FilesHomeRow>(
+      `
+      with ranked as (
+        select
+          f.*,
+          c.name as category_name,
+          p.name as uploader_name,
+          p.email as uploader_email,
+          p.avatar as uploader_avatar,
+          p.real_name as uploader_real_name,
+          p.student_id as uploader_student_id,
+          coalesce(cc.comment_count, 0)::int as comment_count,
+          ${rankingSelect},
+          count(*) over()::int as total_count
         from files f
         left join categories c on c.id = f.category_id
+        left join profiles p on p.user_id = f.uploader_id
+        left join (
+          select file_id, count(*)::int as comment_count
+          from comments
+          where is_active = true
+          group by file_id
+        ) cc on cc.file_id = f.id
         where ${whereSql}
-        `,
-        params
-      ),
-      directQuery<FilesHomeRow>(
-        `
-        with ranked as (
-          select
-            f.*,
-            c.name as category_name,
-            p.name as uploader_name,
-            p.email as uploader_email,
-            p.avatar as uploader_avatar,
-            p.real_name as uploader_real_name,
-            p.student_id as uploader_student_id,
-            coalesce(cc.comment_count, 0)::int as comment_count,
-            ${rankingSelect}
-          from files f
-          left join categories c on c.id = f.category_id
-          left join profiles p on p.user_id = f.uploader_id
-          left join (
-            select file_id, count(*)::int as comment_count
-            from comments
-            where is_active = true
-            group by file_id
-          ) cc on cc.file_id = f.id
-          where ${whereSql}
-        )
-        select *
-        from ranked
-        order by ${searchVariants.length > 0 ? "relevance_score desc, " : ""}${orderBy}
-        limit $${idx} offset $${idx + 1}
-        `,
-        dataParams
-      ),
-    ]);
-    const total = Number(countRows[0]?.total || 0);
+      )
+      select *
+      from ranked
+      order by ${searchVariants.length > 0 ? "relevance_score desc, " : ""}${orderBy}
+      limit $${idx} offset $${idx + 1}
+      `,
+      dataParams
+    );
+    const total = Number(rows[0]?.total_count || 0);
 
     const filesWithRelations = rows.map((file) => ({
       ...file,

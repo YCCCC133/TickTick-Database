@@ -79,6 +79,7 @@ type AdminFileRow = Record<string, unknown> & {
   uploader_student_id: string | null;
   comment_count: number;
   relevance_score: number;
+  total_count: number;
 };
 
 // 获取文件列表（管理员视图）
@@ -102,7 +103,8 @@ export async function GET(request: NextRequest) {
       .from("profiles")
       .select("role")
       .eq("user_id", user.id)
-      .single();
+      .limit(1)
+      .maybeSingle();
 
     if (profile?.role !== "admin" && profile?.role !== "volunteer") {
       return NextResponse.json({ error: "无权限访问" }, { status: 403 });
@@ -184,49 +186,39 @@ export async function GET(request: NextRequest) {
 
     const scoreSql = searchVariants.length > 0 ? buildSearchScoreSql(searchVariants, searchStartIdx) : "0";
     const dataParams = [...params, limit, offset];
-    const [countRows, rows] = await Promise.all([
-      directQuery<{ total: string }>(
-        `
-        select count(*)::int as total
+    const rows = await directQuery<AdminFileRow>(
+      `
+      with ranked as (
+        select
+          f.*,
+          c.name as category_name,
+          p.name as uploader_name,
+          p.email as uploader_email,
+          p.avatar as uploader_avatar,
+          p.real_name as uploader_real_name,
+          p.student_id as uploader_student_id,
+          coalesce(cc.comment_count, 0)::int as comment_count,
+          ${scoreSql} as relevance_score,
+          count(*) over()::int as total_count
         from files f
         left join categories c on c.id = f.category_id
+        left join profiles p on p.user_id = f.uploader_id
+        left join (
+          select file_id, count(*)::int as comment_count
+          from comments
+          where is_active = true
+          group by file_id
+        ) cc on cc.file_id = f.id
         where ${whereSql}
-        `,
-        params
-      ),
-      directQuery<AdminFileRow>(
-        `
-        with ranked as (
-          select
-            f.*,
-            c.name as category_name,
-            p.name as uploader_name,
-            p.email as uploader_email,
-            p.avatar as uploader_avatar,
-            p.real_name as uploader_real_name,
-            p.student_id as uploader_student_id,
-            coalesce(cc.comment_count, 0)::int as comment_count,
-            ${scoreSql} as relevance_score
-          from files f
-          left join categories c on c.id = f.category_id
-          left join profiles p on p.user_id = f.uploader_id
-          left join (
-            select file_id, count(*)::int as comment_count
-            from comments
-            where is_active = true
-            group by file_id
-          ) cc on cc.file_id = f.id
-          where ${whereSql}
-        )
-        select *
-        from ranked
-        order by ${searchVariants.length > 0 ? "relevance_score desc, " : ""}${orderBy}
-        limit $${idx} offset $${idx + 1}
-        `,
-        dataParams
-      ),
-    ]);
-    const total = Number(countRows[0]?.total || 0);
+      )
+      select *
+      from ranked
+      order by ${searchVariants.length > 0 ? "relevance_score desc, " : ""}${orderBy}
+      limit $${idx} offset $${idx + 1}
+      `,
+      dataParams
+    );
+    const total = Number(rows[0]?.total_count || 0);
 
     const filesWithRelations = rows.map((file) => ({
       ...file,
