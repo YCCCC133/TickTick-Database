@@ -146,6 +146,8 @@ export async function GET(request: NextRequest) {
       where.push(`f.ai_classified_at is null`);
     }
 
+    const searchStartIdx = idx;
+
     if (searchVariants.length > 0) {
       const normTitle = buildNormalizedTextSql("f.title");
       const normFileName = buildNormalizedTextSql("f.file_name");
@@ -180,7 +182,7 @@ export async function GET(request: NextRequest) {
     const sortColumn = sortMap[sortBy] || "created_at";
     const orderBy = `${sortColumn} ${sortOrder === "asc" ? "asc" : "desc"}`;
 
-    const scoreSql = searchVariants.length > 0 ? buildSearchScoreSql(searchVariants, idx) : "0";
+    const scoreSql = searchVariants.length > 0 ? buildSearchScoreSql(searchVariants, searchStartIdx) : "0";
     const dataParams = [...params, limit, offset];
     const [countRows, rows] = await Promise.all([
       directQuery<{ total: string }>(

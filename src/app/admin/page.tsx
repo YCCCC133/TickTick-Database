@@ -454,7 +454,8 @@ export default function AdminPage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const fileListRequestRef = useRef<AbortController | null>(null);
-  const fileListLoadingRef = useRef(false);
+  const fileListRequestSeqRef = useRef(0);
+  const fileSearchDebounceRef = useRef<number | null>(null);
   
   // 文件详情对话框
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
@@ -559,11 +560,21 @@ export default function AdminPage() {
   useEffect(() => {
     if (!isVolunteer || activeTab !== "files") return;
 
-    const timer = window.setTimeout(() => {
+    if (fileSearchDebounceRef.current) {
+      window.clearTimeout(fileSearchDebounceRef.current);
+    }
+
+    fileSearchDebounceRef.current = window.setTimeout(() => {
       fetchFiles(1);
+      fileSearchDebounceRef.current = null;
     }, 250);
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      if (fileSearchDebounceRef.current) {
+        window.clearTimeout(fileSearchDebounceRef.current);
+        fileSearchDebounceRef.current = null;
+      }
+    };
   }, [
     isVolunteer,
     activeTab,
@@ -578,6 +589,9 @@ export default function AdminPage() {
 
   useEffect(() => {
     return () => {
+      if (fileSearchDebounceRef.current) {
+        window.clearTimeout(fileSearchDebounceRef.current);
+      }
       fileListRequestRef.current?.abort();
     };
   }, []);
@@ -849,14 +863,10 @@ export default function AdminPage() {
   };
 
   const fetchFiles = async (pageOverride?: number) => {
-    if (fileListLoadingRef.current) {
-      fileListRequestRef.current?.abort();
-    }
-
-    fileListLoadingRef.current = true;
     fileListRequestRef.current?.abort();
     const controller = new AbortController();
     fileListRequestRef.current = controller;
+    const requestId = ++fileListRequestSeqRef.current;
 
     try {
       const token = localStorage.getItem("token");
@@ -884,24 +894,29 @@ export default function AdminPage() {
       });
       const data = await response.json();
 
+      if (controller.signal.aborted || requestId !== fileListRequestSeqRef.current) {
+        return;
+      }
+
       if (response.ok) {
         setFiles(data.files || []);
         setFilePagination(data.pagination);
-      } else if (controller.signal.aborted) {
-        return;
       } else {
         console.error("Failed to fetch files:", data.error);
         toast.error(data.error || "获取文件列表失败");
       }
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
+      if (
+        controller.signal.aborted ||
+        requestId !== fileListRequestSeqRef.current ||
+        (error instanceof DOMException && error.name === "AbortError")
+      ) {
         return;
       }
       console.error("Failed to fetch files:", error);
       toast.error("获取文件列表失败");
     } finally {
       if (fileListRequestRef.current === controller) {
-        fileListLoadingRef.current = false;
         fileListRequestRef.current = null;
       }
     }
@@ -913,7 +928,12 @@ export default function AdminPage() {
   };
 
   const handleFileSearch = () => {
+    if (fileSearchDebounceRef.current) {
+      window.clearTimeout(fileSearchDebounceRef.current);
+      fileSearchDebounceRef.current = null;
+    }
     setFilePagination((prev) => ({ ...prev, page: 1 }));
+    fetchFiles(1);
   };
 
   const handleCreateCategory = async () => {
