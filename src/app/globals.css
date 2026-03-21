@@ -67,6 +67,7 @@
   --neu-shadow-light: #FFFFFF;
   --neu-shadow-dark: #E2E8F0;
   --neu-inset-shadow: inset 2px 2px 4px #E2E8F0, inset -2px -2px 4px #FFFFFF;
+  --app-shell-version: 2;
 }
 
 @layer base {
