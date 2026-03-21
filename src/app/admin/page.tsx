@@ -765,9 +765,11 @@ export default function AdminPage() {
       // 详细访问记录
       csvRows.push("=== 详细访问记录 ===");
       csvRows.push("序号,访问时间,IP地址,页面路径,页面类型,来源,浏览器,操作系统,设备类型,会话ID");
+      const pageTypeLabelMap = typeLabels as Record<string, string>;
       
       allPageViews.forEach((view, index) => {
-        const pageTypeLabel = typeLabels[view.pageType] || view.pageType || "未知";
+        const pageType = typeof view.pageType === "string" ? view.pageType : "";
+        const pageTypeLabel = pageTypeLabelMap[pageType] || pageType || "未知";
         const referrer = view.referrer || "直接访问";
         const time = new Date(view.createdAt).toLocaleString("zh-CN");
         
