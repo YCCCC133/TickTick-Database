@@ -50,8 +50,8 @@ export default function Home() {
   const pageRef = useRef(0);
   const requestLockRef = useRef(false);
   const footerRef = useRef<HTMLDivElement | null>(null);
-  const bottomGestureReadyTimerRef = useRef<number | null>(null);
   const bottomGestureIdleTimerRef = useRef<number | null>(null);
+  const bottomGestureAutoLoadTimerRef = useRef<number | null>(null);
   const bottomGestureScoreRef = useRef(0);
   const [footerFullyVisible, setFooterFullyVisible] = useState(false);
   const [bottomTriggerVisible, setBottomTriggerVisible] = useState(false);
@@ -273,17 +273,16 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const easeOutQuint = (value: number) => 1 - Math.pow(1 - value, 5);
     let rafId = 0;
 
     const clearTimers = () => {
-      if (bottomGestureReadyTimerRef.current !== null) {
-        window.clearTimeout(bottomGestureReadyTimerRef.current);
-        bottomGestureReadyTimerRef.current = null;
-      }
       if (bottomGestureIdleTimerRef.current !== null) {
         window.clearTimeout(bottomGestureIdleTimerRef.current);
         bottomGestureIdleTimerRef.current = null;
+      }
+      if (bottomGestureAutoLoadTimerRef.current !== null) {
+        window.clearTimeout(bottomGestureAutoLoadTimerRef.current);
+        bottomGestureAutoLoadTimerRef.current = null;
       }
     };
 
@@ -295,71 +294,63 @@ export default function Home() {
       setBottomTriggerProgress(0);
     };
 
-    const isAtDocumentBottom = () => {
+    const getBottomProximity = () => {
       const doc = document.documentElement;
       const bottomGap = Math.max(0, doc.scrollHeight - (window.scrollY + window.innerHeight));
-      return bottomGap <= 2;
+      const activationRange = Math.max(240, Math.min(720, window.innerHeight * 0.72));
+      const rawProgress = Math.max(0, Math.min(1, 1 - bottomGap / activationRange));
+      return { bottomGap, progress: rawProgress };
     };
 
     const onScroll = () => {
       if (rafId) cancelAnimationFrame(rafId);
       rafId = window.requestAnimationFrame(() => {
-        if (!hasMore || loading || !footerFullyVisible || !isAtDocumentBottom()) {
+        if (!hasMore || loading || !footerFullyVisible) {
           resetTrigger();
+          return;
         }
+
+        const { bottomGap, progress } = getBottomProximity();
+        const isNearBottom = bottomGap <= Math.max(160, window.innerHeight * 0.22);
+
+        if (!isNearBottom) {
+          resetTrigger();
+          return;
+        }
+
+        bottomGestureScoreRef.current = progress;
+        setBottomTriggerVisible(true);
+        setBottomTriggerProgress(1 - Math.pow(1 - progress, 5));
+
+        if (progress >= 0.72) {
+          setBottomTriggerReady(true);
+        } else if (progress < 0.5) {
+          setBottomTriggerReady(false);
+        }
+
+        if (bottomGestureAutoLoadTimerRef.current !== null) {
+          window.clearTimeout(bottomGestureAutoLoadTimerRef.current);
+        }
+        bottomGestureAutoLoadTimerRef.current = window.setTimeout(() => {
+          if (!hasMore || loading || !footerFullyVisible) return;
+          const { bottomGap: latestGap } = getBottomProximity();
+          if (latestGap <= 2) {
+            resetTrigger();
+            loadMore();
+          }
+        }, 120);
       });
-    };
-
-    const onWheel = (event: WheelEvent) => {
-      if (!hasMore || loading || !footerFullyVisible || event.deltaY <= 0 || !isAtDocumentBottom()) {
-        return;
-      }
-
-      const increment = Math.min(0.16, Math.max(0.03, event.deltaY / 1800));
-      const nextScore = Math.min(1, bottomGestureScoreRef.current + increment);
-      bottomGestureScoreRef.current = nextScore;
-
-      setBottomTriggerVisible(true);
-      setBottomTriggerProgress(easeOutQuint(nextScore));
-
-      if (nextScore >= 0.6 && !bottomTriggerReady) {
-        if (bottomGestureReadyTimerRef.current === null) {
-          bottomGestureReadyTimerRef.current = window.setTimeout(() => {
-            setBottomTriggerReady(true);
-            bottomGestureReadyTimerRef.current = null;
-          }, 130);
-        }
-      } else if (nextScore < 0.6 && bottomTriggerReady) {
-        setBottomTriggerReady(false);
-      }
-
-      if (bottomTriggerReady && nextScore >= 0.84) {
-        resetTrigger();
-        loadMore();
-        return;
-      }
-
-      if (bottomGestureIdleTimerRef.current !== null) {
-        window.clearTimeout(bottomGestureIdleTimerRef.current);
-      }
-      bottomGestureIdleTimerRef.current = window.setTimeout(() => {
-        if (!bottomTriggerReady) {
-          resetTrigger();
-        }
-      }, 220);
     };
 
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("wheel", onWheel, { passive: true });
 
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
       clearTimers();
       window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("wheel", onWheel);
     };
-  }, [hasMore, loading, loadMore, footerFullyVisible, bottomTriggerReady]);
+  }, [hasMore, loading, loadMore, footerFullyVisible]);
 
   // 头像上传处理
   const handleAvatarUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
