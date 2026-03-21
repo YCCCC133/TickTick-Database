@@ -69,6 +69,7 @@ const FilePreview = memo(function FilePreview({
   const [savedPreviewUrl, setSavedPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [rendered, setRendered] = useState(false);
+  const [previewFallback, setPreviewFallback] = useState(false);
 
   const fileColor = FILE_TYPE_COLORS[fileType.toLowerCase()] || "#005BA3";
 
@@ -80,7 +81,7 @@ const FilePreview = memo(function FilePreview({
   const isPDF = mimeType === "application/pdf" || fileType.toLowerCase() === "pdf";
 
   // 优先使用已保存的预览图
-  const displayPreviewUrl = savedPreviewUrl || previewUrl;
+  const displayPreviewUrl = previewFallback ? null : (savedPreviewUrl || previewUrl);
 
   // 获取PDF文件URL和检查预览图
   useEffect(() => {
