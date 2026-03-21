@@ -13,6 +13,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const baseUrl = request.nextUrl.origin;
 
     const client = getSupabaseClient();
 
@@ -46,8 +47,6 @@ export async function GET(
     }
 
     // 使用代理URL（WPS需要公网可访问的URL）
-    const domain = process.env.COZE_PROJECT_DOMAIN_DEFAULT || "localhost:5000";
-    const baseUrl = domain.startsWith("http") ? domain : `https://${domain}`;
     const proxyUrl = `${baseUrl}/api/files/${id}/proxy`;
 
     console.log("[Office Preview] 代理URL:", proxyUrl);

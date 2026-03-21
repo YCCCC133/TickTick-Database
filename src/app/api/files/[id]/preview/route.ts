@@ -13,6 +13,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
+    const baseUrl = request.nextUrl.origin;
     const client = getSupabaseClient();
 
     // 获取文件信息 - 不需要登录，只需要文件存在且已上架
@@ -59,8 +60,6 @@ export async function POST(
     );
 
     // 使用代理URL而不是预签名URL（避免403问题）
-    const domain = process.env.COZE_PROJECT_DOMAIN_DEFAULT || "localhost:5000";
-    const baseUrl = domain.startsWith("http") ? domain : `https://${domain}`;
     const previewUrl = `${baseUrl}/api/files/preview/${previewKey}`;
 
     // 更新数据库
