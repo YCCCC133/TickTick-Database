@@ -191,7 +191,7 @@ export async function PUT(request: NextRequest) {
       }
 
       await Promise.all(
-        publishableFiles.map((file) => rewardPublishPoints(file.uploader_id, file.id))
+        publishableFiles.map((file: { id: string; uploader_id: string; is_active: boolean }) => rewardPublishPoints(file.uploader_id, file.id))
       );
 
       cache.delete("files:home");
