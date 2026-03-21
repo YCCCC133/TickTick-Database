@@ -227,28 +227,7 @@ export default function FileUploadDialog({
   };
 
   const CHUNK_SIZE = 512 * 1024; // 512KB 每块，降低单请求体积，提升 Vercel 稳定性
-  const CHUNK_CONCURRENCY = 1; // 串行上传更稳，避免 serverless 并发抖动
   const LARGE_FILE_THRESHOLD = 4 * 1024 * 1024; // 4MB 以上使用分块上传，兼顾稳定和体验
-
-  const runWithConcurrency = async <T, U>(
-    items: T[],
-    limit: number,
-    mapper: (item: T, index: number) => Promise<U>
-  ): Promise<U[]> => {
-    const results: U[] = new Array(items.length);
-    let nextIndex = 0;
-
-    const workers = Array.from({ length: Math.max(1, limit) }, async () => {
-      while (true) {
-        const current = nextIndex++;
-        if (current >= items.length) return;
-        results[current] = await mapper(items[current], current);
-      }
-    });
-
-    await Promise.all(workers);
-    return results;
-  };
 
   // 分块上传函数
   const uploadFileChunked = async (
