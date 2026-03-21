@@ -573,16 +573,12 @@ export default function Home() {
                   onClick={() => setSelectedCategory(FEATURED_CATEGORY)}
                   className={`w-full text-left px-4 py-2.5 rounded-lg transition-all text-sm flex items-center gap-2 ${
                     selectedCategory === FEATURED_CATEGORY
-                      ? "bg-[#FFF3D6] text-[#B45309] shadow-sm"
-                      : "bg-[#FFF8E8] border border-[#F3D68A] text-[#B45309] hover:bg-[#FFF4D8]"
+                      ? "bg-[#005BA3] text-white"
+                      : "hover:bg-[#F1F5F9] text-[#475569]"
                   }`}
                 >
-                  <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full ${
-                    selectedCategory === FEATURED_CATEGORY ? "bg-white/70" : "bg-[#FFE9B8]"
-                  }`}>
-                    <Award className="w-3.5 h-3.5" />
-                  </span>
                   <span>精选资料</span>
+                  <Award className="w-3.5 h-3.5 ml-auto shrink-0 opacity-80" />
                 </button>
                 {categories.map((category) => (
                   <button
@@ -662,12 +658,12 @@ export default function Home() {
                   onClick={() => setSelectedCategory(FEATURED_CATEGORY)}
                   className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-all inline-flex items-center gap-1 ${
                     selectedCategory === FEATURED_CATEGORY
-                      ? "bg-[#FFF3D6] text-[#B45309]"
-                      : "bg-[#FFF8E8] border border-[#F3D68A] text-[#B45309]"
+                      ? "bg-[#005BA3] text-white"
+                      : "bg-white border border-[#E2E8F0] text-[#475569] hover:bg-[#F1F5F9]"
                   }`}
                 >
-                  <Award className="w-4 h-4" />
-                  精选
+                  <span>精选</span>
+                  <Award className="w-3.5 h-3.5 ml-1 shrink-0 opacity-80" />
                 </button>
                 {categories.map((category) => (
                   <button
