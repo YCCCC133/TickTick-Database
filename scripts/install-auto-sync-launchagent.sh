@@ -40,7 +40,13 @@ if ! git -C "\$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "[auto-sync] watching \$(git -C "\$ROOT_DIR" branch --show-current) -> \$REMOTE_NAME in \$ROOT_DIR"
+CURRENT_BRANCH="\$(git -C "\$ROOT_DIR" branch --show-current)"
+if [[ -z "\$CURRENT_BRANCH" ]]; then
+  echo "Detached HEAD detected. Switch to a branch before auto sync." >&2
+  exit 1
+fi
+
+echo "[auto-sync] watching \$CURRENT_BRANCH -> \$REMOTE_NAME in \$ROOT_DIR"
 echo "[auto-sync] poll=\$POLL_INTERVAL s idle=\$IDLE_SECONDS s"
 
 last_signature=""
@@ -48,13 +54,31 @@ dirty_since=0
 
 sync_once() {
   echo "[auto-sync] syncing changes..."
-  if bash "\$ROOT_DIR/scripts/sync-github.sh" -r "\$REMOTE_NAME" -m "\${COMMIT_PREFIX}: \$(date '+%Y-%m-%d %H:%M:%S')"; then
-    echo "[auto-sync] sync completed."
+  local branch
+  branch="\$(git -C "\$ROOT_DIR" branch --show-current)"
+  if [[ -z "\$branch" ]]; then
+    echo "Detached HEAD detected during sync." >&2
+    return 1
+  fi
+
+  if git -C "\$ROOT_DIR" rev-parse --abbrev-ref --symbolic-full-name "@{u}" >/dev/null 2>&1; then
+    git -C "\$ROOT_DIR" pull --rebase --autostash "\$REMOTE_NAME" "\$branch"
+  else
+    echo "[auto-sync] no upstream branch set yet; skipping pull."
+  fi
+
+  git -C "\$ROOT_DIR" add -A
+
+  if git -C "\$ROOT_DIR" diff --cached --quiet; then
+    echo "[auto-sync] no changes to sync."
     return 0
   fi
 
-  echo "[auto-sync] sync failed; will retry on the next stable window." >&2
-  return 1
+  git -C "\$ROOT_DIR" commit -m "\${COMMIT_PREFIX}: \$(date '+%Y-%m-%d %H:%M:%S')"
+  git -C "\$ROOT_DIR" push -u "\$REMOTE_NAME" "\$branch"
+
+    echo "[auto-sync] sync completed."
+    return 0
 }
 
 while true; do
