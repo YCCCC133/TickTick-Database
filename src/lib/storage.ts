@@ -55,7 +55,7 @@ function getClient(): COS {
  * 生成安全的文件 key
  * 格式: files/{timestamp}_{random}.{ext}
  */
-function generateKey(fileName: string): string {
+export function generateFileKey(fileName: string): string {
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(2, 8);
   
@@ -91,7 +91,7 @@ export async function uploadFile(
 ): Promise<string> {
   const client = getClient();
   const config = getConfig();
-  const key = generateKey(fileName);
+  const key = generateFileKey(fileName);
   
   const startTime = Date.now();
   
@@ -134,6 +134,64 @@ export async function uploadStream(
   const buffer = Buffer.concat(chunks);
   
   return uploadFile(buffer, fileName, mimeType);
+}
+
+/**
+ * 生成浏览器直传 COS 的预签名上传 URL
+ */
+export async function getUploadUrl(
+  key: string,
+  expireTime: number = 3600,
+  mimeType?: string
+): Promise<string> {
+  const client = getClient();
+  const config = getConfig();
+
+  return new Promise((resolve) => {
+    client.getObjectUrl({
+      Bucket: config.bucket,
+      Region: config.region,
+      Key: key,
+      Sign: true,
+      Method: "PUT",
+      Expires: expireTime,
+      Headers: mimeType ? { "Content-Type": mimeType } : undefined,
+    }, (err, data) => {
+      if (err) {
+        console.error(`[COS] 上传URL生成失败: ${key}`, err);
+        resolve("");
+      } else {
+        let url = data.Url;
+        if (url && !url.startsWith("http")) {
+          url = `https://${url}`;
+        }
+        resolve(url);
+      }
+    });
+  });
+}
+
+/**
+ * 获取对象元信息
+ */
+export async function headFile(key: string): Promise<{ contentLength?: number } | null> {
+  const client = getClient();
+  const config = getConfig();
+
+  return new Promise((resolve) => {
+    client.headObject({
+      Bucket: config.bucket,
+      Region: config.region,
+      Key: key,
+    }, (err, data) => {
+      if (err) {
+        console.error(`[COS] HEAD失败: ${key}`, err);
+        resolve(null);
+      } else {
+        resolve({ contentLength: Number((data as any)?.headers?.["content-length"] || (data as any)?.headers?.["Content-Length"] || 0) || undefined });
+      }
+    });
+  });
 }
 
 /**
