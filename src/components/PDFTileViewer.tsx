@@ -12,7 +12,7 @@ interface PDFTileViewerProps {
 // 声明全局 pdfjsLib 类型
 declare global {
   interface Window {
-    pdfjsLib: PdfJsGlobal;
+    pdfjsLib: any;
   }
 }
 

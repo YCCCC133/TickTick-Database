@@ -347,7 +347,7 @@ const FilePreview = memo(function FilePreview({
 // 添加类型声明
 declare global {
   interface Window {
-    pdfjsLib: PdfJsGlobal;
+    pdfjsLib: any;
   }
 }
 
