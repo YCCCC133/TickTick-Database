@@ -214,8 +214,8 @@ export async function PUT(request: NextRequest) {
       }
 
       const activeFileIds = (fileStates || [])
-        .filter((file) => file.is_active)
-        .map((file) => file.id);
+        .filter((file: { id: string; uploader_id: string; is_active: boolean }) => file.is_active)
+        .map((file: { id: string; uploader_id: string; is_active: boolean }) => file.id);
 
       if (activeFileIds.length > 0) {
         return NextResponse.json({
