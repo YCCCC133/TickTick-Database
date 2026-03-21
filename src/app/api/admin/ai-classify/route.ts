@@ -96,6 +96,16 @@ type BatchOutcome = {
 };
 
 type ReviewInputRecord = Record<string, unknown>;
+type ReviewFileRow = {
+  id: string;
+  title: string;
+  file_name: string;
+  file_type: string;
+  file_key?: string | null;
+  category_id?: string | null;
+  course?: string | null;
+  description?: string | null;
+};
 type LlmReviewItem = {
   id: string | number;
   compliant?: boolean;
@@ -458,7 +468,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const fileList = (files || []).map(file => ({
+    const fileList = (files || []).map((file: ReviewFileRow) => ({
       id: file.id,
       title: file.title,
       fileName: file.file_name,
