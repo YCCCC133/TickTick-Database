@@ -141,9 +141,9 @@ export async function POST(request: NextRequest) {
       .from("categories")
       .select("id, name");
 
-    const categoryNames = categories?.map(c => c.name) || [];
+    const categoryNames = categories?.map((c: { id: string; name: string }) => c.name) || [];
     const categoryMap_byName: Record<string, string> = {};
-    categories?.forEach(cat => {
+    categories?.forEach((cat: { id: string; name: string }) => {
       categoryMap_byName[cat.name] = cat.id;
     });
 
