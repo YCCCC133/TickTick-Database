@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
     // 尝试删除对象存储中的文件
     if (files && files.length > 0) {
       const { deleteFiles } = await import("@/lib/storage");
-      const result = await deleteFiles(files.map(f => f.file_key));
+      const result = await deleteFiles(files.map((f: { file_key: string | null }) => f.file_key));
       console.log(`[批量删除] 存储删除结果: 成功 ${result.deleted}, 失败 ${result.failed.length}`);
     }
 
