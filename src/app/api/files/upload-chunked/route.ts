@@ -5,6 +5,7 @@ import { getDirectDbPool } from "@/lib/direct-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB 每块，适配 Vercel 请求体限制
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB

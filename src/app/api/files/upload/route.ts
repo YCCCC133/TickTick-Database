@@ -6,6 +6,7 @@ import { PDFDocument } from "pdf-lib";
 // Next.js App Router 配置
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 // 最大文件大小限制 (100MB)
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
