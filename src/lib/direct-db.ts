@@ -6,8 +6,9 @@ let pool: Pool | null = null;
 function buildConnectionString(): string {
   ensureEnvLoaded();
 
-  if (process.env.PGDATABASE_URL) {
-    return process.env.PGDATABASE_URL;
+  const url = process.env.DATABASE_URL || process.env.PGDATABASE_URL;
+  if (url) {
+    return url;
   }
 
   const host = process.env.PGHOST;
@@ -35,7 +36,7 @@ export function getDirectDbPool(): Pool {
   return pool;
 }
 
-export async function directQuery<T = any>(text: string, values: any[] = []): Promise<T[]> {
+export async function directQuery<T = unknown>(text: string, values: unknown[] = []): Promise<T[]> {
   const client = getDirectDbPool();
   const result = await client.query(text, values);
   return result.rows as T[];
