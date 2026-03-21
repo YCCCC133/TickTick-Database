@@ -23,7 +23,7 @@ async function getCategories(client: ReturnType<typeof getSupabaseClient>) {
   
   const map: Record<string, string> = {};
   const names: string[] = [];
-  categories?.forEach(cat => {
+  categories?.forEach((cat: { id: string; name: string }) => {
     map[cat.name] = cat.id;
     map[cat.id] = cat.name;
     names.push(cat.name);
