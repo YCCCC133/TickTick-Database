@@ -226,11 +226,9 @@ export default function FileUploadDialog({
     }
   };
 
-  const CHUNK_SIZE = 512 * 1024; // 512KB 每块，降低单请求体积，提升 Vercel 稳定性
-  const LARGE_FILE_THRESHOLD = 4 * 1024 * 1024; // 4MB 以上使用分块上传，兼顾稳定和体验
+  const LARGE_FILE_THRESHOLD = 1 * 1024 * 1024; // 1MB 以上走 COS 直传，绕开 Vercel body 限制
 
-  // 分块上传函数
-  const uploadFileChunked = async (
+  const uploadFileDirectToCos = async (
     file: File,
     metadata: { title: string; description: string; categoryId: string; semester: string; course: string; tags: string[] },
     token: string,
@@ -251,8 +249,8 @@ export default function FileUploadDialog({
       }
     };
 
-    // 1. 初始化分块上传
-    const initResponse = await fetch("/api/files/upload-chunked", {
+    // 1. 初始化 COS 直传
+    const initResponse = await fetch("/api/files/upload-direct", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -276,93 +274,89 @@ export default function FileUploadDialog({
       throw new Error(await readErrorMessage(initResponse, "初始化上传失败"));
     }
 
-    const { sessionId, totalChunks: chunks } = await initResponse.json();
-    
-    // 2. 逐个上传分块；每片单独重试，减少整批回滚
-    let uploadedBytes = 0;
-    let lastTime = Date.now();
-    let lastUploadedBytes = 0;
+    const { uploadUrl, fileKey } = await initResponse.json();
+    if (!uploadUrl || !fileKey) {
+      throw new Error("初始化上传失败：缺少上传地址");
+    }
 
-    for (let i = 0; i < chunks; i++) {
-      const start = i * CHUNK_SIZE;
-      const end = Math.min(start + CHUNK_SIZE, file.size);
-      const chunk = file.slice(start, end);
+    const uploadResult = await new Promise<{ success: boolean }>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      let startTime = Date.now();
+      let lastLoaded = 0;
 
-      let lastChunkError = "";
-      for (let retry = 0; retry <= 2; retry++) {
-        try {
-          if (retry > 0) {
-            await new Promise((resolve) => setTimeout(resolve, 500 * retry));
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          
+          const elapsed = (Date.now() - startTime) / 1000;
+          const loadedSinceLast = event.loaded - lastLoaded;
+          const speed = elapsed > 0 ? loadedSinceLast / elapsed : 0;
+          lastLoaded = event.loaded;
+          startTime = Date.now();
+
+          let speedText = "";
+          if (speed > 1024 * 1024) {
+            speedText = `${(speed / 1024 / 1024).toFixed(1)} MB/s`;
+          } else if (speed > 1024) {
+            speedText = `${(speed / 1024).toFixed(1)} KB/s`;
+          } else {
+            speedText = `${speed.toFixed(0)} B/s`;
           }
 
-          const formData = new FormData();
-          formData.append("sessionId", sessionId);
-          formData.append("chunkIndex", i.toString());
-          formData.append("chunk", chunk);
+          onProgress(progress, speedText);
+        }
+      };
 
-          const chunkResponse = await fetch("/api/files/upload-chunked", {
+      xhr.onload = async () => {
+        if (xhr.status < 200 || xhr.status >= 300) {
+          reject(new Error(`COS 上传失败 (${xhr.status})`));
+          return;
+        }
+
+        try {
+          const completeResponse = await fetch("/api/files/upload-direct", {
             method: "POST",
             headers: {
+              "Content-Type": "application/json",
               "Authorization": `Bearer ${token}`,
-              "x-upload-action": "chunk",
+              "x-upload-action": "complete",
             },
-            body: formData,
+            body: JSON.stringify({
+              fileKey,
+              fileName: file.name,
+              fileSize: file.size,
+              mimeType: file.type || "application/octet-stream",
+              title: metadata.title,
+              description: metadata.description,
+              categoryId: metadata.categoryId,
+              semester: metadata.semester,
+              course: metadata.course,
+              tags: metadata.tags,
+            }),
           });
 
-          if (!chunkResponse.ok) {
-            throw new Error(await readErrorMessage(chunkResponse, `分块 ${i + 1}/${chunks} 上传失败`));
+          if (!completeResponse.ok) {
+            reject(new Error(await readErrorMessage(completeResponse, "完成上传失败")));
+            return;
           }
 
-          lastChunkError = "";
-          break;
+          onProgress(100, "");
+          resolve({ success: true });
         } catch (error) {
-          lastChunkError = error instanceof Error ? error.message : `分块 ${i + 1}/${chunks} 上传失败`;
-          if (retry === 2) {
-            throw new Error(lastChunkError);
-          }
+          reject(error instanceof Error ? error : new Error("完成上传失败"));
         }
-      }
+      };
 
-      // 更新进度
-      uploadedBytes += (end - start);
-      const progress = Math.round((uploadedBytes / file.size) * 100);
-      
-      // 计算速度
-      const now = Date.now();
-      const elapsed = (now - lastTime) / 1000;
-      const bytesSinceLast = uploadedBytes - lastUploadedBytes;
-      const speed = elapsed > 0 ? bytesSinceLast / elapsed : 0;
-      lastTime = now;
-      lastUploadedBytes = uploadedBytes;
+      xhr.onerror = () => reject(new Error("网络错误"));
+      xhr.ontimeout = () => reject(new Error("上传超时"));
 
-      let speedText = "";
-      if (speed > 1024 * 1024) {
-        speedText = `${(speed / 1024 / 1024).toFixed(1)} MB/s`;
-      } else if (speed > 1024) {
-        speedText = `${(speed / 1024).toFixed(1)} KB/s`;
-      } else {
-        speedText = `${speed.toFixed(0)} B/s`;
-      }
-
-      onProgress(progress, speedText);
-    }
-
-    // 3. 完成上传
-    const completeResponse = await fetch("/api/files/upload-chunked", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`,
-        "x-upload-action": "complete",
-      },
-      body: JSON.stringify({ sessionId }),
+      xhr.open("PUT", uploadUrl);
+      xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+      xhr.timeout = 10 * 60 * 1000;
+      xhr.send(file);
     });
 
-    if (!completeResponse.ok) {
-      throw new Error(await readErrorMessage(completeResponse, "完成上传失败"));
-    }
-
-    return { success: true };
+    return uploadResult;
   };
 
   // 上传单个文件（带进度跟踪）- 支持大文件分块上传
@@ -378,11 +372,11 @@ export default function FileUploadDialog({
         return;
       }
 
-      // 大文件使用分块上传
+      // 大文件使用 COS 直传，避免 Vercel 单请求体积限制
       if (item.file.size > LARGE_FILE_THRESHOLD) {
-        console.log(`使用分块上传: ${item.file.name} (${(item.file.size / 1024 / 1024).toFixed(1)}MB)`);
+        console.log(`使用 COS 直传: ${item.file.name} (${(item.file.size / 1024 / 1024).toFixed(1)}MB)`);
         try {
-          const result = await uploadFileChunked(
+          const result = await uploadFileDirectToCos(
             item.file,
             {
               title: item.title,
