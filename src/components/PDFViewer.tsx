@@ -27,6 +27,25 @@ type PdfDocumentLike = {
 // 声明全局 pdfjsLib 类型
 declare global {
   interface Window {
+    pdfjsLib: any;
+  }
+}
+/*
+  保持与其他 PDF 组件一致：这里先用 any 统一全局声明，避免 Turbopack/TS 的声明冲突。
+*/
+/* eslint-disable @typescript-eslint/no-explicit-any */
+declare global {
+  interface Window {
+    pdfjsLib: any;
+  }
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+/*
+  下方的具体 PdfDocumentLike / PdfPage 类型仍保留，用于本文件内部方法签名。
+*/
+/*
+declare global {
+  interface Window {
     pdfjsLib: {
       GlobalWorkerOptions: { workerSrc: string };
       getDocument(options: {
@@ -39,6 +58,7 @@ declare global {
     };
   }
 }
+*/
 
 export function PDFViewer({ url, className = "" }: PDFViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
