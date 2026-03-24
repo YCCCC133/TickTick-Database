@@ -11,6 +11,7 @@ import {
 import { Category } from "@/types";
 import { toast } from "sonner";
 import { getStoredUploadToken, uploadFileDirectToCos } from "@/lib/browser-upload";
+import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from "@/config/upload";
 
 interface FileUploadDialogProps {
   open: boolean;
@@ -61,12 +62,10 @@ export default function FileUploadDialog({
   // 根据角色限制上传数量：访客5个，管理员/志愿者100个
   const isAdminOrVolunteer = userRole === "admin" || userRole === "volunteer";
   const MAX_FILES = isAdminOrVolunteer ? 100 : 5;
-  const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
-  
   // 文件大小验证
   const validateFileSize = (file: File): boolean => {
-    if (file.size > MAX_FILE_SIZE) {
-      toast.error(`文件 "${file.name}" 超过100MB限制`);
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      toast.error(`文件 "${file.name}" 超过${MAX_FILE_SIZE_MB}MB限制`);
       return false;
     }
     return true;
@@ -410,7 +409,7 @@ export default function FileUploadDialog({
             批量上传资料
           </DialogTitle>
           <DialogDescription className="text-[#64748B]">
-            支持最多上传 {MAX_FILES} 个文件，单个文件最大 100MB。大文件自动使用 COS 直传，失败自动重试3次。
+            支持最多上传 {MAX_FILES} 个文件，单个文件最大 {MAX_FILE_SIZE_MB}MB。大文件自动使用 COS 直传，失败自动重试3次。
             {!isAdminOrVolunteer && (
               <span className="block mt-1 text-amber-600 text-sm">
                 ⚠️ 您上传的资料需要管理员审核后才能上架。

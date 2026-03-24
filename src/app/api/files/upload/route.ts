@@ -3,14 +3,13 @@ import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { uploadFile, getFileUrl } from "@/lib/storage";
 import { PDFDocument } from "pdf-lib";
 import { getRequestAuthToken } from "@/lib/request-auth";
+import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from "@/config/upload";
 
 // Next.js App Router 配置
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-// 最大文件大小限制 (100MB)
-const MAX_FILE_SIZE = 100 * 1024 * 1024;
 // PDF 压缩阈值 (10MB)
 const PDF_COMPRESS_THRESHOLD = 10 * 1024 * 1024;
 
@@ -123,9 +122,9 @@ export async function POST(request: NextRequest) {
     }
 
     // 检查文件大小
-    if (file.size > MAX_FILE_SIZE) {
+    if (file.size > MAX_FILE_SIZE_BYTES) {
       return NextResponse.json(
-        { error: `文件大小超过限制（最大 ${MAX_FILE_SIZE / 1024 / 1024}MB）` },
+        { error: `文件大小超过限制（最大 ${MAX_FILE_SIZE_MB}MB）` },
         { status: 400 }
       );
     }

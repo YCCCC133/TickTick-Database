@@ -3,12 +3,11 @@ import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { generateFileKey, getFileUrl, getUploadUrl, headFile } from "@/lib/storage";
 import { getPublicOrigin } from "@/lib/public-origin";
 import { getRequestAuthToken } from "@/lib/request-auth";
+import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from "@/config/upload";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
 async function authorize(request: NextRequest) {
   const token = getRequestAuthToken(request);
@@ -49,8 +48,8 @@ async function initDirectUpload(request: NextRequest) {
     return NextResponse.json({ error: "缺少必要参数" }, { status: 400 });
   }
 
-  if (fileSize > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: `文件大小超过限制（最大 ${MAX_FILE_SIZE / 1024 / 1024}MB）` }, { status: 400 });
+  if (fileSize > MAX_FILE_SIZE_BYTES) {
+    return NextResponse.json({ error: `文件大小超过限制（最大 ${MAX_FILE_SIZE_MB}MB）` }, { status: 400 });
   }
 
   const fileKey = generateFileKey(fileName);

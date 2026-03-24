@@ -3,13 +3,13 @@ import { getSupabaseClient } from "@/storage/database/supabase-client";
 import { getFileUrl, uploadFile } from "@/lib/storage";
 import { getDirectDbPool } from "@/lib/direct-db";
 import { getRequestAuthToken } from "@/lib/request-auth";
+import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from "@/config/upload";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB 每块，适配 Vercel 请求体限制
-const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
 async function authorize(request: NextRequest) {
   const token = getRequestAuthToken(request);
@@ -53,8 +53,8 @@ async function initChunkedUpload(request: NextRequest) {
     return NextResponse.json({ error: "缺少必要参数" }, { status: 400 });
   }
 
-  if (fileSize > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: `文件大小超过限制（最大 ${MAX_FILE_SIZE / 1024 / 1024}MB）` }, { status: 400 });
+  if (fileSize > MAX_FILE_SIZE_BYTES) {
+    return NextResponse.json({ error: `文件大小超过限制（最大 ${MAX_FILE_SIZE_MB}MB）` }, { status: 400 });
   }
 
   const totalChunks = Math.ceil(fileSize / CHUNK_SIZE);
